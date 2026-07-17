@@ -132,35 +132,29 @@ async function analyzeCreature(targetActor) {
     };
 
     // Generate lies based on actual data, ensuring they are strictly false
-    let fakeWeakness = getFakeType(realWeaknesses);
-    let fakeImmunity = getFakeType(realImmunities);
-    let fakeResistance = getFakeType(realResistances);
+    let baseFakeWeakness = getFakeType(realWeaknesses);
+    let baseFakeImmunity = getFakeType(realImmunities);
+    let baseFakeResistance = getFakeType(realResistances);
 
     if (weaknesses.length > 0) {
         const primary = weaknesses[0].type.toLowerCase();
-        // Fake weakness: Opposite of actual weakness (if not actually weak to it)
-        fakeWeakness = getFakeType(realWeaknesses, getOpposite(primary));
-        // Fake immunity: Claim they are immune to what they are actually weak to!
-        fakeImmunity = getFakeType(realImmunities, primary);
+        baseFakeWeakness = getFakeType(realWeaknesses, getOpposite(primary));
+        baseFakeImmunity = getFakeType(realImmunities, primary);
     } else if (resistances.length > 0) {
         const primary = resistances[0].type.toLowerCase();
-        // Fake weakness: Claim they are weak to what they actually resist
-        fakeWeakness = getFakeType(realWeaknesses, primary);
-        fakeResistance = getFakeType(realResistances, getOpposite(primary));
+        baseFakeWeakness = getFakeType(realWeaknesses, primary);
+        baseFakeResistance = getFakeType(realResistances, getOpposite(primary));
     } else if (immunities.length > 0) {
         const primary = immunities[0].type.toLowerCase();
-        // Fake weakness: Claim they are weak to what they are actually immune to
-        fakeWeakness = getFakeType(realWeaknesses, primary);
-        fakeImmunity = getFakeType(realImmunities, getOpposite(primary));
+        baseFakeWeakness = getFakeType(realWeaknesses, primary);
+        baseFakeImmunity = getFakeType(realImmunities, getOpposite(primary));
     }
 
-    let fakeName = "a different creature";
-    let fakeAbility = ['Sneak Attack', 'Breath Weapon', 'Rend', 'Swallow Whole'].find(a => !truths.abilities.includes(a)) || "a special attack";
+    let baseFakeAbility = ['Sneak Attack', 'Breath Weapon', 'Rend', 'Swallow Whole'].find(a => !truths.abilities.includes(a)) || "a special attack";
+    let liesArray = [];
 
     if (targetActor.type === 'npc') {
-        // Filter out humanoid to avoid generic matches
         const targetTraits = (targetActor.system?.traits?.value || []).filter(t => t.toLowerCase() !== 'humanoid');
-
         const packs = ['pf2e.pathfinder-monster-core', 'pf2e.pathfinder-monster-core-2', 'pf2e.pathfinder-bestiary', 'pf2e.pathfinder-bestiary-2', 'pf2e.pathfinder-bestiary-3'];
         let possibleEntries = [];
 
@@ -168,7 +162,6 @@ async function analyzeCreature(targetActor) {
             const pack = game.packs.get(packKey);
             if (!pack) continue;
             try {
-                // Fetch rarity alongside traits and name
                 const index = await pack.getIndex({ fields: ["system.traits.value", "system.traits.rarity", "name"] });
                 for (const entry of index) {
                     if (entry.name === targetActor.name) continue;
@@ -176,7 +169,6 @@ async function analyzeCreature(targetActor) {
                     const entryTraits = entry.system?.traits?.value || [];
                     const entryRarity = entry.system?.traits?.rarity || 'common';
 
-                    // Calculate a match score based on shared valid traits
                     let matchCount = 0;
                     for (const t of targetTraits) {
                         if (entryTraits.includes(t)) matchCount++;
@@ -192,62 +184,69 @@ async function analyzeCreature(targetActor) {
         }
 
         if (possibleEntries.length > 0) {
-            // Sort matches descending by how many traits they share with the target
             possibleEntries.sort((a, b) => b.score - a.score);
-
-            // Keep the top 25 matches. This restores a healthy pool size for true 
-            // randomness while ensuring the lies remain highly thematic and believable.
-            let topMatches = possibleEntries.slice(0, 50);
-
-            // Prioritize common creatures within this top pool, fallback to uncommon
+            let topMatches = possibleEntries.slice(0, 25);
             let commons = topMatches.filter(e => e.rarity === 'common');
             let uncommons = topMatches.filter(e => e.rarity === 'uncommon');
             let pool = commons.length > 0 ? commons : (uncommons.length > 0 ? uncommons : topMatches);
 
-            const chosen = pool[Math.floor(Math.random() * pool.length)];
-            fakeName = chosen.name;
+            // Shuffle the pool and pick up to 3 unique creatures
+            let shuffledPool = pool.sort(() => 0.5 - Math.random());
+            let chosenList = shuffledPool.slice(0, 3);
 
-            // Load the fake creature document to extract actual abilities & lies
-            try {
-                const fakePack = game.packs.get(chosen.pack);
-                const fakeDoc = await fakePack.getDocument(chosen._id);
-                if (fakeDoc) {
-                    const fAttrs = fakeDoc.system?.attributes || {};
-                    const fWeaknesses = (fAttrs.weaknesses || []).map(w => w.type.toLowerCase());
-                    const fImmunities = (fAttrs.immunities || []).map(i => i.type.toLowerCase());
-                    const fResistances = (fAttrs.resistances || []).map(r => r.type.toLowerCase());
+            // Extract real stats for all 3 fake creatures
+            for (const chosen of chosenList) {
+                let currentLie = {
+                    fakeName: chosen.name,
+                    fakeWeakness: baseFakeWeakness,
+                    fakeImmunity: baseFakeImmunity,
+                    fakeResistance: baseFakeResistance,
+                    fakeAbility: baseFakeAbility
+                };
 
-                    const fActions = (fakeDoc.items || [])
-                        .filter(i => i.type === 'action' || i.type === 'melee' || i.type === 'spell')
-                        .map(i => i.name)
-                        .filter(n => n && n.length > 2);
+                try {
+                    const fakePack = game.packs.get(chosen.pack);
+                    const fakeDoc = await fakePack.getDocument(chosen._id);
+                    if (fakeDoc) {
+                        const fAttrs = fakeDoc.system?.attributes || {};
+                        const fWeaknesses = (fAttrs.weaknesses || []).map(w => w.type.toLowerCase());
+                        const fImmunities = (fAttrs.immunities || []).map(i => i.type.toLowerCase());
+                        const fResistances = (fAttrs.resistances || []).map(r => r.type.toLowerCase());
+                        const fActions = (fakeDoc.items || [])
+                            .filter(i => i.type === 'action' || i.type === 'melee' || i.type === 'spell')
+                            .map(i => i.name)
+                            .filter(n => n && n.length > 2);
 
-                    // Ensure fake stats do not accidentally match real truths!
-                    const validFW = fWeaknesses.filter(w => !realWeaknesses.includes(w));
-                    const validFI = fImmunities.filter(i => !realImmunities.includes(i));
-                    const validFR = fResistances.filter(r => !realResistances.includes(r));
-                    const validFA = fActions.filter(a => !truths.abilities.includes(a));
+                        const validFW = fWeaknesses.filter(w => !realWeaknesses.includes(w));
+                        const validFI = fImmunities.filter(i => !realImmunities.includes(i));
+                        const validFR = fResistances.filter(r => !realResistances.includes(r));
+                        const validFA = fActions.filter(a => !truths.abilities.includes(a));
 
-                    if (validFW.length > 0) fakeWeakness = validFW[0];
-                    if (validFI.length > 0) fakeImmunity = validFI[0];
-                    if (validFR.length > 0) fakeResistance = validFR[0];
-                    if (validFA.length > 0) fakeAbility = validFA[Math.floor(Math.random() * validFA.length)];
+                        if (validFW.length > 0) currentLie.fakeWeakness = validFW[0];
+                        if (validFI.length > 0) currentLie.fakeImmunity = validFI[0];
+                        if (validFR.length > 0) currentLie.fakeResistance = validFR[0];
+                        if (validFA.length > 0) currentLie.fakeAbility = validFA[Math.floor(Math.random() * validFA.length)];
+                    }
+                } catch (e) {
+                    console.warn("Recall Knowledge | Could not load detailed stats for a fake creature.");
                 }
-            } catch (e) {
-                console.warn("Recall Knowledge | Could not load fake creature doc for detailed stats.");
+                liesArray.push(currentLie);
             }
         }
     }
 
-    const lies = {
-        fakeWeakness,
-        fakeImmunity,
-        fakeResistance,
-        fakeAbility,
-        fakeName
-    };
+    // Fallback if the compendium search failed or returned nothing
+    if (liesArray.length === 0) {
+        liesArray.push({
+            fakeName: "a different creature",
+            fakeWeakness: baseFakeWeakness,
+            fakeImmunity: baseFakeImmunity,
+            fakeResistance: baseFakeResistance,
+            fakeAbility: baseFakeAbility
+        });
+    }
 
-    return { truths, lies, name: targetActor.name };
+    return { truths, lies: liesArray, name: targetActor.name };
 }
 
 /**
@@ -279,12 +278,12 @@ function getHintForDegree(degree, analysis) {
         return `<span style="color:#0055aa;"><b>Reveal One Fact:</b> ${bestFact}</span>`;
 
     } else if (degree === 'Failure') {
-        // Provide gentle lies for Dubious Knowledge or standard failure
-        return `<span style="color:#aa5500;"><b>Dubious Knowledge (or No Info):</b> They think they might be facing <b>${lies.fakeName}</b>. They are unsure if it has a weakness to <b>${lies.fakeWeakness}</b>, an immunity to <b>${lies.fakeImmunity}</b>, or if it has the ability <b>${lies.fakeAbility}</b>.</span>`;
+        const optionsHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> Unsure if it has a weakness to <b>${l.fakeWeakness}</b>, immunity to <b>${l.fakeImmunity}</b>, or the ability <b>${l.fakeAbility}</b>.</li>`).join('');
+        return `<span style="color:#aa5500;"><b>Dubious Knowledge (or No Info) — Pick a lie to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
 
     } else if (degree === 'Critical Failure') {
-        // Bold lies
-        return `<span style="color:#aa0000;"><b>Confident Falsehood:</b> They are absolutely sure this is a <b>${lies.fakeName}</b>! They are sure it is immune to <b>${lies.fakeImmunity}</b>, or has a weakness to <b>${lies.fakeWeakness}</b>, or that it has the ability <b>${lies.fakeAbility}</b>!</span>`;
+        const optionsHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> Confident it is immune to <b>${l.fakeImmunity}</b>, weak to <b>${l.fakeWeakness}</b>, or has the ability <b>${l.fakeAbility}</b>.</li>`).join('');
+        return `<span style="color:#aa0000;"><b>Confident Falsehood — Pick a lie to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
     }
 
     return "";
