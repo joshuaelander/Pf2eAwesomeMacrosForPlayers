@@ -3,18 +3,17 @@ const MACRO_FOLDER_NAME = "PF2e Awesome Macros For Players";
 const MACRO_FOLDER_COLOR = "#990000";
 
 import {
-    setupRandomGenAPI,
-    createRandomGenMacro,
-    handleGMCreateButton
-} from "./random-gen.js";
+    handleGMCreateButton,
+    createCharacter,
+    ROLL_RANDOM_CHARACTER_MACRO_NAME,
+	ROLL_RANDOM_CHARACTER_MACRO_ICON,
+} from "./roll-random-character.js";
 
-// Ensure this runs only in the PF2e system
-Hooks.once("init", () => {
-    if (game.system.id !== "pf2e") return;
-
-    // Register the API so macros can call it
-    setupRandomGenAPI();
-});
+import {
+    openRecallKnowledgeDialog,
+    ENHANCED_RECALL_MACRO_NAME,
+    ENHANCED_RECALL_MACRO_ICON,
+} from "./enhanced-recall-knowledge.js";
 
 // Hook to handle the GM clicking the "Create Actor" button on the chat card
 Hooks.on("renderChatMessage", (message, html, data) => {
@@ -45,8 +44,8 @@ Hooks.once('ready', async () => {
 
         // Programmatically create the macro buttons 
         createMacroDocument(
-            ROLL_RANDOM_CHARACTER_NAME,
-            ROLL_RANDOM_CHARACTER_ICON,
+            ROLL_RANDOM_CHARACTER_MACRO_NAME,
+            ROLL_RANDOM_CHARACTER_MACRO_ICON,
             `game.pf2eAwesomePlayerMacros.createCharacter();`,
             targetFolderId
         );

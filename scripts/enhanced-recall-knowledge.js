@@ -9,7 +9,7 @@
  */
 
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
-export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/gaming/dice-runed-brown.webp";
+export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/documents/blueprint-recipe-alchemical.webp";
 
 /**
  * Simple HTML escape to avoid injection in chat content/options.
@@ -99,7 +99,7 @@ async function analyzeCreature(targetActor) {
         abilities: shuffledActions.slice(0, 3)
     };
 
-    const allDamageTypes = ['acid', 'bludgeoning', 'cold', 'electricity', 'fire', 'force', 'mental', 'piercing', 'poison', 'slashing', 'sonic', 'void', 'vitality'];
+    const allDamageTypes = ['acid', 'bludgeoning', 'cold', 'electricity', 'fire', 'force', 'mental', 'piercing', 'poison', 'slashing', 'sonic', 'void', 'vitality', 'spirit', 'cold iron', 'silver', 'precision', 'physical'];
     
     // Arrays of actual types to avoid telling accidental truths
     const realWeaknesses = weaknesses.map(w => (w.type || '').toLowerCase());
@@ -118,7 +118,12 @@ async function analyzeCreature(targetActor) {
     // Helper to find a logical opposite
     const getOpposite = (type) => {
         const opposites = { 
-            'fire': 'cold', 'cold': 'fire', 
+            'fire': 'cold', 'cold': 'fire',
+            'acid': 'poison', 'poison': 'acid',
+            'electricity': 'sonic', 'sonic': 'electricity',
+            'spirit': 'physical', 'physical': 'spirit',
+            'mental': 'precision', 'precision': 'mental',
+			'cold iron': 'silver', 'silver': 'cold iron',
             'vitality': 'void', 'void': 'vitality', 
             'slashing': 'bludgeoning', 'bludgeoning': 'piercing', 'piercing': 'slashing',
             'good': 'evil', 'evil': 'good'
@@ -156,7 +161,7 @@ async function analyzeCreature(targetActor) {
         const validTraits = ['undead', 'beast', 'aberration', 'animal', 'construct', 'dragon', 'elemental', 'fey', 'fiend', 'celestial', 'fungus', 'plant', 'monitor', 'ooze'];
         const mainTrait = traits.find(t => validTraits.includes(t)) || traits.find(t => t !== 'humanoid');
         
-        const packs = ['pf2e.pathfinder-monster-core', 'pf2e.pathfinder-bestiary', 'pf2e.pathfinder-bestiary-2', 'pf2e.pathfinder-bestiary-3'];
+        const packs = ['pf2e.pathfinder-monster-core', 'pf2e.pathfinder-monster-core-2', 'pf2e.pathfinder-bestiary', 'pf2e.pathfinder-bestiary-2', 'pf2e.pathfinder-bestiary-3'];
         let possibleNames = [];
         
         for (const packKey of packs) {
@@ -173,7 +178,7 @@ async function analyzeCreature(targetActor) {
             } catch (e) {
                 console.warn("Recall Knowledge | Could not search pack:", packKey);
             }
-            if (possibleNames.length > 50) break; // Limit search pool to avoid delays
+            if (possibleNames.length > 100) break; // Limit search pool to avoid delays
         }
         if (possibleNames.length > 0) {
             fakeName = possibleNames[Math.floor(Math.random() * possibleNames.length)];
@@ -220,11 +225,11 @@ function getHintForDegree(degree, analysis) {
     
     } else if (degree === 'Failure') {
         // Provide gentle lies for Dubious Knowledge or standard failure
-        return `<span style="color:#aa5500;"><b>No info (or Dubious lie):</b> Hint they might be facing <b>${lies.fakeName}</b>, suggest a fake weakness to <b>${lies.fakeWeakness}</b>, or fake resistance to <b>${lies.fakeResistance}</b>.</span>`;
+        return `<span style="color:#aa5500;"><b>No info (or Dubious Knowledge):</b> They think they might be facing <b>${lies.fakeName}</b>, they are pretty sure it has a weakness to <b>${lies.fakeWeakness}</b>, or a resistance to <b>${lies.fakeResistance}</b>.</span>`;
     
     } else if (degree === 'Critical Failure') {
         // Bold lies
-        return `<span style="color:#aa0000;"><b>Confident Lie:</b> Claim this is actually <b>${lies.fakeName}</b>! Claim it is completely immune to <b>${lies.fakeImmunity}</b>, or extremely weak to <b>${lies.fakeWeakness}</b>!</span>`;
+        return `<span style="color:#aa0000;"><b>Confident Falsehood:</b> They are sure this is actually <b>${lies.fakeName}</b>! They know it is immune to <b>${lies.fakeImmunity}</b>, or has a weakness to <b>${lies.fakeWeakness}</b>!</span>`;
     }
 
     return "";

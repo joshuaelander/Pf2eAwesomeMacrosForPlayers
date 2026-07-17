@@ -8,8 +8,8 @@
  *   to handle Dubious Knowledge and Critical Failures easily.
  */
 
-export const ROLL_RANDOM_CHARACTER_NAME = "Roll for Random Character";
-export const ROLL_RANDOM_CHARACTER_ICON = "icons/sundries/gaming/dice-runed-brown.webp";
+export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
+export const ROLL_RANDOM_CHARACTER_MACRO_ICON = "icons/sundries/gaming/dice-runed-brown.webp";
 
 export function handleGMCreateButton(message, html, data) {
     if (!game.user.isGM) return;
@@ -178,10 +178,16 @@ async function getRandomDoc(packKey, filterFn) {
     const pack = game.packs.get(packKey);
     if (!pack) return null;
 
-    let index = await pack.getIndex({ fields: ["system"] });
+    // getIndex returns a Collection. We use .contents to turn it into a standard Array.
+    const indexCollection = await pack.getIndex({ fields: ["system"] });
+    let index = indexCollection.contents;
+
+    // Now we can safely use array methods like .filter() and .length
     if (filterFn) index = index.filter(filterFn);
 
     if (index.length === 0) return null;
+
+    // Grab a random entry from the array
     const randomEntry = index[Math.floor(Math.random() * index.length)];
 
     return await pack.getDocument(randomEntry._id);
