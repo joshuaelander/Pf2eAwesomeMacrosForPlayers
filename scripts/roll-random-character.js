@@ -6,6 +6,7 @@
  * - Triggers standard 3D dice using a 1d100 percentage trick for compendiums.
  * - Custom Stat Allocation algorithm (Rolls d4s to distribute 9-10 points, max 4 per stat).
  * - Applies generated stats via manual override directly to the created Actor.
+ * - Properly triggers PF2e ChoiceSet dialogs upon Actor creation.
  */
 
 export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
@@ -31,7 +32,7 @@ export function handleGMCreateButton(message, html, data) {
         if (dataset.stats) {
             const stats = JSON.parse(dataset.stats);
             systemData = {
-                build: { attributes: { manual: true } }, // PF2e flag to allow manual stat entry
+                build: { attributes: { manual: true } },
                 abilities: {}
             };
             for (const [key, val] of Object.entries(stats)) {
@@ -46,12 +47,21 @@ export function handleGMCreateButton(message, html, data) {
             if (item) items.push(item.toObject());
         }
 
+        // 1. Create the naked actor FIRST
         const newActor = await Actor.create({
             name: actorName,
             type: "character",
-            items: items,
             system: systemData
         });
+
+        // 2. Render the sheet so the GM can see the choice dialogs pop up
+        newActor.sheet.render(true);
+
+        // 3. Inject the items. This simulates dropping them onto the sheet 
+        // and ensures PF2e fires all 'ChoiceSet' (Grant Item) dialogs.
+        if (items.length > 0) {
+            await newActor.createEmbeddedDocuments("Item", items);
+        }
 
         ui.notifications.info(`Successfully created PC: ${newActor.name}`);
         btn.text("Actor Created");
@@ -73,21 +83,22 @@ export async function createCharacter() {
         await new Promise(r => setTimeout(r, 1000));
     };
 
-    // 1. Ancestry
-    const ancestry = await getRandomDocWith3DDice("pf2e.ancestries", null, "Ancestry");
-    if (ancestry) {
-        results.uuids.push(ancestry.uuid);
-        results.summary.ancestry = ancestry.name;
-        await announce("Ancestry Revealed", ancestry.name);
+    // 1. Ancestry (Optional)
+    let ancestry = null;
+    if (options.rAncestry) {
+        ancestry = await getRandomDocWith3DDice("pf2e.ancestries", null, "Ancestry");
+        if (ancestry) {
+            results.uuids.push(ancestry.uuid);
+            results.summary.ancestry = ancestry.name;
+            await announce("Ancestry Revealed", ancestry.name);
+        }
     }
 
-    // 2. Heritage (Optional)
+    // 2. Heritage (Optional - Requires Ancestry to be rolled to filter properly)
     if (options.rHeritage && ancestry) {
-        // Fallbacks to reliably grab the ancestry identifier across different PF2e versions
         const ancestrySlug = ancestry.system?.slug || ancestry.slug || ancestry.name.toLowerCase().replace(/[^a-z0-9]+/gi, '-');
         const ancestryUuid = ancestry.uuid;
 
-        // Fetch full documents for Heritages because the index misses nested system data
         const heritage = await getRandomDocWith3DDice("pf2e.heritages", (h) => {
             const hAncestryVal = h.system?.ancestry?.value || h.system?.ancestry?.slug;
             const hAncestryUuid = h.system?.ancestry?.uuid;
@@ -135,13 +146,11 @@ export async function createCharacter() {
     }
 
     // 5. Stats (Optional)
-    // Runs when checkbox is ticked. Checkbox is automatically enabled if Random Class is unchecked.
     if (options.rStats) {
         let pointsLeft = options.dual ? 10 : 9;
         const statsObj = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
         const statKeys = Object.keys(statsObj);
 
-        // Shuffle stat array randomly so stats on the left don't get priority over stats on the right
         for (let i = statKeys.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [statKeys[i], statKeys[j]] = [statKeys[j], statKeys[i]];
@@ -153,14 +162,13 @@ export async function createCharacter() {
         });
         await new Promise(res => setTimeout(res, 1000));
 
-        // Loop and roll 1d4s until we hit 0 points
         while (pointsLeft > 0) {
             for (const key of statKeys) {
                 if (pointsLeft <= 0) break;
-                if (statsObj[key] >= 4) continue; // Hard cap of 4 per stat at level 1
+                if (statsObj[key] >= 4) continue;
 
                 const r = await new Roll("1d4").evaluate();
-                const maxAdd = 4 - statsObj[key]; // Don't overfill past 4
+                const maxAdd = 4 - statsObj[key];
                 const toAdd = Math.min(r.total, pointsLeft, maxAdd);
 
                 if (toAdd > 0) {
@@ -171,7 +179,7 @@ export async function createCharacter() {
 
                     statsObj[key] += toAdd;
                     pointsLeft -= toAdd;
-                    await new Promise(res => setTimeout(res, 800)); // Pause so dice can roll visually
+                    await new Promise(res => setTimeout(res, 800));
                 }
             }
         }
@@ -196,8 +204,13 @@ async function promptOptions() {
         const dialogContent = `
             <form>
                 <div class="form-group">
+                    <label>Roll Ancestry</label>
+                    <input type="checkbox" id="rand-ancestry" checked />
+                </div>
+                <div class="form-group">
                     <label>Roll Heritage</label>
                     <input type="checkbox" id="rand-heritage" checked />
+                    <p class="notes">Requires Ancestry to be rolled.</p>
                 </div>
                 <div class="form-group">
                     <label>Roll Random Class</label>
@@ -223,10 +236,19 @@ async function promptOptions() {
             title: "Random PC Generator",
             content: dialogContent,
             render: (html) => {
+                const ancestryBox = html.find('#rand-ancestry');
+                const heritageBox = html.find('#rand-heritage');
                 const classBox = html.find('#rand-class');
                 const statBox = html.find('#rand-stats');
 
-                // Enforce the logic: Stat rolling only unlocked if Class rolling is OFF
+                // Enforce Ancestry -> Heritage logic
+                ancestryBox.on('change', (e) => {
+                    const isChecked = e.target.checked;
+                    heritageBox.prop('disabled', !isChecked);
+                    if (!isChecked) heritageBox.prop('checked', false);
+                });
+
+                // Enforce Class -> Stats logic
                 classBox.on('change', (e) => {
                     const isChecked = e.target.checked;
                     statBox.prop('disabled', isChecked);
@@ -239,6 +261,7 @@ async function promptOptions() {
                     label: "Roll!",
                     callback: (html) => {
                         resolve({
+                            rAncestry: html.find('#rand-ancestry').is(':checked'),
                             rHeritage: html.find('#rand-heritage').is(':checked'),
                             rClass: html.find('#rand-class').is(':checked'),
                             dual: html.find('#rand-dual').is(':checked'),
@@ -258,40 +281,32 @@ async function promptOptions() {
     });
 }
 
-/**
- * Custom fetcher that rolls a standard 1d100 to trigger 3D dice, 
- * using the percentage result to pick from any array length.
- */
 async function getRandomDocWith3DDice(packKey, filterFn, rollFlavor, loadFullDocs = false) {
     const pack = game.packs.get(packKey);
     if (!pack) return null;
 
     let itemsArray = [];
     if (loadFullDocs) {
-        itemsArray = await pack.getDocuments(); // Heavy, but necessary for nested data like Heritages
+        itemsArray = await pack.getDocuments();
     } else {
         const indexCollection = await pack.getIndex({ fields: ["system"] });
-        itemsArray = indexCollection.contents; // Lighter, great for Classes/Ancestries
+        itemsArray = indexCollection.contents;
     }
 
     if (filterFn) itemsArray = itemsArray.filter(filterFn);
     if (itemsArray.length === 0) return null;
 
-    // Roll a standard d100 to trigger visual 3D dice module
     const roll = await new Roll(`1d100`).evaluate();
     await roll.toMessage({
         flavor: `Rolling 1d100 to determine random <strong>${rollFlavor}</strong>...`,
         speaker: ChatMessage.getSpeaker()
     });
 
-    // Dramatic pause for the dice to finish rolling visually
     await new Promise(r => setTimeout(r, 1500));
 
-    // Convert the d100 (1-100) into a percentage (0.00 - 0.99) to select array index
     const percentage = (roll.total - 1) / 100;
     const chosenIndex = Math.floor(percentage * itemsArray.length);
 
-    // If we loaded full docs, return it immediately. Otherwise, get the full document by ID.
     if (loadFullDocs) {
         return itemsArray[chosenIndex];
     } else {
@@ -315,7 +330,6 @@ async function postSummary(results) {
         speaker: ChatMessage.getSpeaker()
     });
 
-    // Encode the stats object into a dataset string so the listener can grab it
     const statsDataset = s.statsObj ? JSON.stringify(s.statsObj) : "";
 
     const gmMessageContent = `
