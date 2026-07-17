@@ -1,0 +1,21 @@
+{
+  "id": "pf2e-awesome-macros-for-players",
+  "title": "PF2e Awesome Macros for Players",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "url": "https://github.com/joshuaelander/Pf2eAwesomeMacrosForPlayers",
+  "manifest": "https://raw.githubusercontent.com/joshuaelander/Pf2eAwesomeMacrosForPlayers/main/module.json",
+  "download": "https://github.com/joshuaelander/Pf2eAwesomeMacrosForPlayers/archive/refs/heads/main.zip",
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "authors": [
+    {
+      "name": "Aeneas"
+    }
+  ],
+  "description": "Various Awesome Macros for Players including a random encounter generator and quick recall knowledge checks with secret rolls"
+}
