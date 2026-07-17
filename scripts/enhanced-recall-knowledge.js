@@ -1,5 +1,5 @@
 /**
- * Enhanced Recall Knowledge Macro for PF2e
+ * Enhanced Quick Recall Knowledge Macro for PF2e
  * 
  * Features:
  * - Rolls for selected tokens or the whole party.
@@ -54,7 +54,7 @@ function calculateRKDC(targetActor) {
     if (!targetActor || targetActor.type !== 'npc') return 15;
     const level = targetActor.system?.details?.level?.value || 0;
     const rarity = targetActor.system?.traits?.rarity || 'common';
-    
+
     // Base DC by level
     const dcs = {
         "-1": 13, 0: 14, 1: 15, 2: 16, 3: 18, 4: 19, 5: 20, 6: 22,
@@ -63,12 +63,12 @@ function calculateRKDC(targetActor) {
         22: 44, 23: 46, 24: 48, 25: 50
     };
     let dc = dcs[level] !== undefined ? dcs[level] : (14 + level * 1.3);
-    
+
     // Rarity adjustments
     if (rarity === 'uncommon') dc += 2;
     else if (rarity === 'rare') dc += 5;
     else if (rarity === 'unique') dc += 10;
-    
+
     return Math.floor(dc);
 }
 
@@ -88,7 +88,7 @@ async function analyzeCreature(targetActor) {
         .filter(i => i.type === 'action' || i.type === 'melee' || i.type === 'spell')
         .map(i => i.name)
         .filter(n => n && n.length > 2);
-    
+
     // Shuffle actions to give random abilities on crits
     const shuffledActions = actions.sort(() => 0.5 - Math.random());
 
@@ -100,7 +100,7 @@ async function analyzeCreature(targetActor) {
     };
 
     const allDamageTypes = ['acid', 'bludgeoning', 'cold', 'electricity', 'fire', 'force', 'mental', 'piercing', 'poison', 'slashing', 'sonic', 'void', 'vitality', 'spirit', 'cold iron', 'silver', 'precision', 'physical'];
-    
+
     // Arrays of actual types to avoid telling accidental truths
     const realWeaknesses = weaknesses.map(w => (w.type || '').toLowerCase());
     const realResistances = resistances.map(r => (r.type || '').toLowerCase());
@@ -117,14 +117,14 @@ async function analyzeCreature(targetActor) {
 
     // Helper to find a logical opposite
     const getOpposite = (type) => {
-        const opposites = { 
+        const opposites = {
             'fire': 'cold', 'cold': 'fire',
             'acid': 'poison', 'poison': 'acid',
             'electricity': 'sonic', 'sonic': 'electricity',
             'spirit': 'physical', 'physical': 'spirit',
             'mental': 'precision', 'precision': 'mental',
-			'cold iron': 'silver', 'silver': 'cold iron',
-            'vitality': 'void', 'void': 'vitality', 
+            'cold iron': 'silver', 'silver': 'cold iron',
+            'vitality': 'void', 'void': 'vitality',
             'slashing': 'bludgeoning', 'bludgeoning': 'piercing', 'piercing': 'slashing',
             'good': 'evil', 'evil': 'good'
         };
@@ -155,33 +155,73 @@ async function analyzeCreature(targetActor) {
     }
 
     let fakeName = "a different creature";
+    let fakeAbility = ['Sneak Attack', 'Breath Weapon', 'Rend', 'Swallow Whole'].find(a => !truths.abilities.includes(a)) || "a special attack";
+
     if (targetActor.type === 'npc') {
         const traits = targetActor.system?.traits?.value || [];
         // Prioritize major creature types to find a matching fake creature, excluding humanoid
         const validTraits = ['undead', 'beast', 'aberration', 'animal', 'construct', 'dragon', 'elemental', 'fey', 'fiend', 'celestial', 'fungus', 'plant', 'monitor', 'ooze'];
         const mainTrait = traits.find(t => validTraits.includes(t)) || traits.find(t => t !== 'humanoid');
-        
+
         const packs = ['pf2e.pathfinder-monster-core', 'pf2e.pathfinder-monster-core-2', 'pf2e.pathfinder-bestiary', 'pf2e.pathfinder-bestiary-2', 'pf2e.pathfinder-bestiary-3'];
-        let possibleNames = [];
-        
+        let possibleEntries = [];
+
         for (const packKey of packs) {
             const pack = game.packs.get(packKey);
             if (!pack) continue;
             try {
-                const index = await pack.getIndex({fields: ["system.traits.value", "name"]});
+                // Fetch rarity alongside traits and name
+                const index = await pack.getIndex({ fields: ["system.traits.value", "system.traits.rarity", "name"] });
                 for (const entry of index) {
                     const entryTraits = entry.system?.traits?.value || [];
+                    const entryRarity = entry.system?.traits?.rarity || 'common';
                     if (mainTrait && entryTraits.includes(mainTrait) && entry.name !== targetActor.name) {
-                        possibleNames.push(entry.name);
+                        possibleEntries.push({ _id: entry._id, pack: packKey, rarity: entryRarity, name: entry.name });
                     }
                 }
             } catch (e) {
                 console.warn("Recall Knowledge | Could not search pack:", packKey);
             }
-            if (possibleNames.length > 100) break; // Limit search pool to avoid delays
         }
-        if (possibleNames.length > 0) {
-            fakeName = possibleNames[Math.floor(Math.random() * possibleNames.length)];
+
+        if (possibleEntries.length > 0) {
+            // Prioritize common creatures, fallback to uncommon
+            let commons = possibleEntries.filter(e => e.rarity === 'common');
+            let uncommons = possibleEntries.filter(e => e.rarity === 'uncommon');
+            let pool = commons.length > 0 ? commons : (uncommons.length > 0 ? uncommons : possibleEntries);
+
+            const chosen = pool[Math.floor(Math.random() * pool.length)];
+            fakeName = chosen.name;
+
+            // Load the fake creature document to extract actual abilities & lies
+            try {
+                const fakePack = game.packs.get(chosen.pack);
+                const fakeDoc = await fakePack.getDocument(chosen._id);
+                if (fakeDoc) {
+                    const fAttrs = fakeDoc.system?.attributes || {};
+                    const fWeaknesses = (fAttrs.weaknesses || []).map(w => w.type.toLowerCase());
+                    const fImmunities = (fAttrs.immunities || []).map(i => i.type.toLowerCase());
+                    const fResistances = (fAttrs.resistances || []).map(r => r.type.toLowerCase());
+
+                    const fActions = (fakeDoc.items || [])
+                        .filter(i => i.type === 'action' || i.type === 'melee' || i.type === 'spell')
+                        .map(i => i.name)
+                        .filter(n => n && n.length > 2);
+
+                    // Ensure fake stats do not accidentally match real truths!
+                    const validFW = fWeaknesses.filter(w => !realWeaknesses.includes(w));
+                    const validFI = fImmunities.filter(i => !realImmunities.includes(i));
+                    const validFR = fResistances.filter(r => !realResistances.includes(r));
+                    const validFA = fActions.filter(a => !truths.abilities.includes(a));
+
+                    if (validFW.length > 0) fakeWeakness = validFW[0];
+                    if (validFI.length > 0) fakeImmunity = validFI[0];
+                    if (validFR.length > 0) fakeResistance = validFR[0];
+                    if (validFA.length > 0) fakeAbility = validFA[Math.floor(Math.random() * validFA.length)];
+                }
+            } catch (e) {
+                console.warn("Recall Knowledge | Could not load fake creature doc for detailed stats.");
+            }
         }
     }
 
@@ -189,6 +229,7 @@ async function analyzeCreature(targetActor) {
         fakeWeakness,
         fakeImmunity,
         fakeResistance,
+        fakeAbility,
         fakeName
     };
 
@@ -210,26 +251,26 @@ function getHintForDegree(degree, analysis) {
         if (truths.immunities.length) facts.push(`Immune to <b>${truths.immunities.join(', ')}</b>`);
         if (truths.resistances.length) facts.push(`Resists <b>${truths.resistances.join(', ')}</b>`);
         if (truths.abilities.length) facts.push(`Notable abilities: <b>${truths.abilities.join(', ')}</b>`);
-        
+
         hint = facts.length > 0 ? facts.join(' | ') : "No special weaknesses or resistances. Reveal a hidden trait or lore!";
         return `<span style="color:#008800;"><b>Reveal Multiple Facts:</b> ${hint}</span>`;
-    
+
     } else if (degree === 'Success') {
         let bestFact = "Reveal a basic trait or lore.";
         if (truths.weaknesses.length) bestFact = `Reveal Weakness: <b>${truths.weaknesses[0]}</b>`;
         else if (truths.immunities.length) bestFact = `Reveal Immunity: <b>${truths.immunities[0]}</b>`;
         else if (truths.resistances.length) bestFact = `Reveal Resistance: <b>${truths.resistances[0]}</b>`;
         else if (truths.abilities.length) bestFact = `Reveal Ability: <b>${truths.abilities[0]}</b>`;
-        
+
         return `<span style="color:#0055aa;"><b>Reveal One Fact:</b> ${bestFact}</span>`;
-    
+
     } else if (degree === 'Failure') {
         // Provide gentle lies for Dubious Knowledge or standard failure
-        return `<span style="color:#aa5500;"><b>No info (or Dubious Knowledge):</b> They think they might be facing <b>${lies.fakeName}</b>, they are pretty sure it has a weakness to <b>${lies.fakeWeakness}</b>, or a resistance to <b>${lies.fakeResistance}</b>.</span>`;
-    
+        return `<span style="color:#aa5500;"><b>Dubious Knowledge (or No Info):</b> They think they might be facing <b>${lies.fakeName}</b>. They are unsure if it has a weakness to <b>${lies.fakeWeakness}</b>, an immunity to <b>${lies.fakeImmunity}</b>, or if it has the ability <b>${lies.fakeAbility}</b>.</span>`;
+
     } else if (degree === 'Critical Failure') {
         // Bold lies
-        return `<span style="color:#aa0000;"><b>Confident Falsehood:</b> They are sure this is actually <b>${lies.fakeName}</b>! They know it is immune to <b>${lies.fakeImmunity}</b>, or has a weakness to <b>${lies.fakeWeakness}</b>!</span>`;
+        return `<span style="color:#aa0000;"><b>Confident Falsehood:</b> They are absolutely sure this is a <b>${lies.fakeName}</b>! They are sure it is immune to <b>${lies.fakeImmunity}</b>, or has a weakness to <b>${lies.fakeWeakness}</b>, or that it has the ability <b>${lies.fakeAbility}</b>!</span>`;
     }
 
     return "";
@@ -252,7 +293,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
         const d20display = res.d20 !== null ? `${res.d20}` : '—';
         const modifier = res.total - (res.d20 || 0);
         const breakdown = res.d20 !== null ? `${d20display} + ${modifier}` : `${res.total}`;
-        
+
         // Generate contextual hint
         const hintHtml = getHintForDegree(res.degree, creatureAnalysis);
 
@@ -322,7 +363,7 @@ async function performRecallKnowledge(html) {
     let creatureAnalysis = null;
     let dc = 15; // fallback
     const targets = Array.from(game.user.targets ?? []);
-    
+
     if (targets.length === 0) {
         ui.notifications.warn('You must target an enemy to Recall Knowledge.');
         return;
@@ -346,20 +387,14 @@ async function performRecallKnowledge(html) {
             }
         }
     } else {
-        const actorFolders = game.folders.filter(f => f.type === 'Actor');
-        const partyFolder = actorFolders.find(f => (f.name || '').toLowerCase() === 'party');
-
-        if (partyFolder) {
-            for (const actor of game.actors.values()) {
-                if (actor.folder?.id === partyFolder.id) targetActors.push(actor);
-            }
-        }
-
-        if (targetActors.length === 0) {
-            for (const actor of game.actors.values()) {
-                if (actor && (actor.type === 'character' || actor.hasPlayerOwner)) {
-                    targetActors.push(actor);
-                }
+        // Favor the active party in modern PF2e
+        if (game.actors.party) {
+            targetActors = Array.from(game.actors.party.members);
+        } else {
+            // Fallback for setups without an explicit Party actor
+            targetActors = game.actors.filter(a => a.type === 'character' && (a.system?.details?.alliance === 'party' || a.alliance === 'party'));
+            if (targetActors.length === 0) {
+                targetActors = game.actors.filter(a => a.type === 'character' && a.hasPlayerOwner);
             }
         }
     }
@@ -415,7 +450,21 @@ async function performRecallKnowledge(html) {
         return;
     }
 
+    // Send secret message to GM
     await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis);
+
+    // Show a public card to the players
+    let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h3>Recall Knowledge</h3></header><div class="card-content">`;
+    for (const res of results) {
+        publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall any information about the creature using their skill in <b>${escapeHtml(res.skillLabel)}</b>.</p>`;
+    }
+    publicContent += `</div></div>`;
+
+    await ChatMessage.create({
+        user: game.user.id,
+        speaker: ChatMessage.getSpeaker(),
+        content: publicContent
+    });
 }
 
 /**
@@ -424,7 +473,7 @@ async function performRecallKnowledge(html) {
 function getSuggestedSkill(actor) {
     if (!actor || actor.type !== 'npc') return null;
     const traits = actor.system?.traits?.value || [];
-    
+
     // PF2e baseline trait to skill mappings
     const rkMap = {
         aberration: 'occultism', animal: 'nature', astral: 'occultism', beast: 'nature',
@@ -437,7 +486,7 @@ function getSuggestedSkill(actor) {
     for (const trait of traits) {
         if (rkMap[trait]) return rkMap[trait];
     }
-    
+
     return null;
 }
 
@@ -467,7 +516,7 @@ export function openRecallKnowledgeDialog() {
     }
 
     const hasTarget = (targets.length > 0);
-    const targetWarning = hasTarget 
+    const targetWarning = hasTarget
         ? `<p style="color: green;"><em><i class="fas fa-bullseye"></i> Target detected. DC and traits will be calculated secretly.</em></p>`
         : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No enemy targeted. You must target an enemy!</em></p>`;
 
@@ -501,4 +550,9 @@ export function openRecallKnowledgeDialog() {
         },
         default: 'roll'
     }).render(true);
+}
+
+// Auto-execute if run directly as a macro in Foundry VTT
+if (typeof game !== "undefined" && game.user) {
+    openRecallKnowledgeDialog();
 }
