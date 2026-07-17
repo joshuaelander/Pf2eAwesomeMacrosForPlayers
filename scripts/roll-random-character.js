@@ -3,9 +3,9 @@
  * 
  * Features:
  * - Rolls random Ancestry, Heritage, Class, Background, and Stats.
- * - Supports 3D dice rolling to chat.
- * - Auto-generates a dynamic name (e.g., "Random Goblin Rogue").
- * - Provides a GM-only button to instantly generate the actor.
+ * - Triggers standard 3D dice using a 1d100 percentage trick for compendiums.
+ * - Custom Stat Allocation algorithm (Rolls d4s to distribute 9-10 points, max 4 per stat).
+ * - Applies generated stats via manual override directly to the created Actor.
  */
 
 export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
@@ -22,10 +22,24 @@ export function handleGMCreateButton(message, html, data) {
         btn.prop("disabled", true);
         btn.text("Creating...");
 
-        const uuids = e.currentTarget.dataset.uuids.split(",");
-        const actorName = e.currentTarget.dataset.actorname || "Random Generated PC";
-        const items = [];
+        const dataset = e.currentTarget.dataset;
+        const uuids = dataset.uuids.split(",");
+        const actorName = dataset.actorname || "Random Generated PC";
 
+        // Retrieve and parse our generated stats
+        let systemData = {};
+        if (dataset.stats) {
+            const stats = JSON.parse(dataset.stats);
+            systemData = {
+                build: { attributes: { manual: true } }, // PF2e flag to allow manual stat entry
+                abilities: {}
+            };
+            for (const [key, val] of Object.entries(stats)) {
+                systemData.abilities[key] = { mod: val };
+            }
+        }
+
+        const items = [];
         for (const uuid of uuids) {
             if (!uuid) continue;
             const item = await fromUuid(uuid);
@@ -35,7 +49,8 @@ export function handleGMCreateButton(message, html, data) {
         const newActor = await Actor.create({
             name: actorName,
             type: "character",
-            items: items
+            items: items,
+            system: systemData
         });
 
         ui.notifications.info(`Successfully created PC: ${newActor.name}`);
@@ -59,7 +74,7 @@ export async function createCharacter() {
     };
 
     // 1. Ancestry
-    const ancestry = await getRandomDoc("pf2e.ancestries", null, "Ancestry");
+    const ancestry = await getRandomDocWith3DDice("pf2e.ancestries", null, "Ancestry");
     if (ancestry) {
         results.uuids.push(ancestry.uuid);
         results.summary.ancestry = ancestry.name;
@@ -67,12 +82,22 @@ export async function createCharacter() {
     }
 
     // 2. Heritage (Optional)
-    if (options.rHeritage) {
-        const heritage = await getRandomDoc("pf2e.heritages", (i) => {
-            const isMatch = i.system?.ancestry?.value === ancestry?.slug;
-            const isVersatile = (i.system?.traits?.value || []).includes("versatile");
+    if (options.rHeritage && ancestry) {
+        // Fallbacks to reliably grab the ancestry identifier across different PF2e versions
+        const ancestrySlug = ancestry.system?.slug || ancestry.slug || ancestry.name.toLowerCase().replace(/[^a-z0-9]+/gi, '-');
+        const ancestryUuid = ancestry.uuid;
+
+        // Fetch full documents for Heritages because the index misses nested system data
+        const heritage = await getRandomDocWith3DDice("pf2e.heritages", (h) => {
+            const hAncestryVal = h.system?.ancestry?.value || h.system?.ancestry?.slug;
+            const hAncestryUuid = h.system?.ancestry?.uuid;
+
+            const isMatch = (hAncestryVal === ancestrySlug) || (hAncestryUuid === ancestryUuid);
+            const isVersatile = (h.system?.traits?.value || []).includes("versatile");
+
             return isMatch || isVersatile;
-        }, "Heritage");
+        }, "Heritage", true);
+
         if (heritage) {
             results.uuids.push(heritage.uuid);
             results.summary.heritage = heritage.name;
@@ -82,7 +107,7 @@ export async function createCharacter() {
 
     // 3. Class (Optional)
     if (options.rClass) {
-        const class1 = await getRandomDoc("pf2e.classes", null, "Class");
+        const class1 = await getRandomDocWith3DDice("pf2e.classes", null, "Class");
         if (class1) {
             results.uuids.push(class1.uuid);
             results.summary.class = class1.name;
@@ -90,7 +115,7 @@ export async function createCharacter() {
         }
 
         if (options.dual) {
-            const class2 = await getRandomDoc("pf2e.classes", (i) => i._id !== class1?._id, "Dual Class");
+            const class2 = await getRandomDocWith3DDice("pf2e.classes", (i) => i._id !== class1?._id, "Dual Class");
             if (class2) {
                 results.uuids.push(class2.uuid);
                 results.summary.dualClass = class2.name;
@@ -101,7 +126,7 @@ export async function createCharacter() {
 
     // 4. Background (Optional)
     if (options.bg) {
-        const background = await getRandomDoc("pf2e.backgrounds", null, "Background");
+        const background = await getRandomDocWith3DDice("pf2e.backgrounds", null, "Background");
         if (background) {
             results.uuids.push(background.uuid);
             results.summary.background = background.name;
@@ -110,21 +135,50 @@ export async function createCharacter() {
     }
 
     // 5. Stats (Optional)
-    if (options.rStats && !options.rClass) {
-        const stats = [];
+    // Runs when checkbox is ticked. Checkbox is automatically enabled if Random Class is unchecked.
+    if (options.rStats) {
+        let pointsLeft = options.dual ? 10 : 9;
+        const statsObj = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
+        const statKeys = Object.keys(statsObj);
+
+        // Shuffle stat array randomly so stats on the left don't get priority over stats on the right
+        for (let i = statKeys.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [statKeys[i], statKeys[j]] = [statKeys[j], statKeys[i]];
+        }
+
         await ChatMessage.create({
-            content: `<strong>Rolling 4d6 (drop lowest) for 6 Stats...</strong>`,
+            content: `<strong>Allocating Stats...</strong> (Total Points to Distribute: ${pointsLeft})`,
             speaker: ChatMessage.getSpeaker()
         });
+        await new Promise(res => setTimeout(res, 1000));
 
-        for (let i = 0; i < 6; i++) {
-            const r = await new Roll("4d6kh3").evaluate();
-            await r.toMessage({ speaker: ChatMessage.getSpeaker() });
-            stats.push(r.total);
-            await new Promise(res => setTimeout(res, 800));
+        // Loop and roll 1d4s until we hit 0 points
+        while (pointsLeft > 0) {
+            for (const key of statKeys) {
+                if (pointsLeft <= 0) break;
+                if (statsObj[key] >= 4) continue; // Hard cap of 4 per stat at level 1
+
+                const r = await new Roll("1d4").evaluate();
+                const maxAdd = 4 - statsObj[key]; // Don't overfill past 4
+                const toAdd = Math.min(r.total, pointsLeft, maxAdd);
+
+                if (toAdd > 0) {
+                    await r.toMessage({
+                        flavor: `Rolled ${r.total} -> Adding ${toAdd} to <strong>${key.toUpperCase()}</strong>`,
+                        speaker: ChatMessage.getSpeaker()
+                    });
+
+                    statsObj[key] += toAdd;
+                    pointsLeft -= toAdd;
+                    await new Promise(res => setTimeout(res, 800)); // Pause so dice can roll visually
+                }
+            }
         }
-        results.summary.stats = stats.join(", ");
-        await announce("Stat Spread Result", results.summary.stats);
+
+        results.summary.statsObj = statsObj;
+        results.summary.stats = `STR: ${statsObj.str}, DEX: ${statsObj.dex}, CON: ${statsObj.con}, INT: ${statsObj.int}, WIS: ${statsObj.wis}, CHA: ${statsObj.cha}`;
+        await announce("Final Stat Spread", results.summary.stats);
     }
 
     // Compile dynamic name
@@ -132,7 +186,7 @@ export async function createCharacter() {
     if (results.summary.ancestry) nameParts.push(results.summary.ancestry);
     if (results.summary.class) nameParts.push(results.summary.class);
     results.actorName = nameParts.join(" ").trim();
-    if (results.actorName === "Random") results.actorName = "Random Generated PC"; // Fallback
+    if (results.actorName === "Random") results.actorName = "Random Generated PC";
 
     await postSummary(results);
 }
@@ -158,7 +212,7 @@ async function promptOptions() {
                     <input type="checkbox" id="rand-bg" checked />
                 </div>
                 <div class="form-group">
-                    <label>Roll Random Stat Spread (4d6 drop lowest)</label>
+                    <label>Roll Random Stat Spread</label>
                     <input type="checkbox" id="rand-stats" disabled />
                     <p class="notes">Disabled while Random Class is selected.</p>
                 </div>
@@ -172,6 +226,7 @@ async function promptOptions() {
                 const classBox = html.find('#rand-class');
                 const statBox = html.find('#rand-stats');
 
+                // Enforce the logic: Stat rolling only unlocked if Class rolling is OFF
                 classBox.on('change', (e) => {
                     const isChecked = e.target.checked;
                     statBox.prop('disabled', isChecked);
@@ -203,31 +258,45 @@ async function promptOptions() {
     });
 }
 
-async function getRandomDoc(packKey, filterFn, rollFlavor) {
+/**
+ * Custom fetcher that rolls a standard 1d100 to trigger 3D dice, 
+ * using the percentage result to pick from any array length.
+ */
+async function getRandomDocWith3DDice(packKey, filterFn, rollFlavor, loadFullDocs = false) {
     const pack = game.packs.get(packKey);
     if (!pack) return null;
 
-    const indexCollection = await pack.getIndex({ fields: ["system"] });
-    let index = indexCollection.contents;
+    let itemsArray = [];
+    if (loadFullDocs) {
+        itemsArray = await pack.getDocuments(); // Heavy, but necessary for nested data like Heritages
+    } else {
+        const indexCollection = await pack.getIndex({ fields: ["system"] });
+        itemsArray = indexCollection.contents; // Lighter, great for Classes/Ancestries
+    }
 
-    if (filterFn) index = index.filter(filterFn);
-    if (index.length === 0) return null;
+    if (filterFn) itemsArray = itemsArray.filter(filterFn);
+    if (itemsArray.length === 0) return null;
 
-    // Create an actual dice roll using the length of the filtered compendium
-    const roll = await new Roll(`1d${index.length}`).evaluate();
-
-    // Send it to chat so 3D dice trigger
+    // Roll a standard d100 to trigger visual 3D dice module
+    const roll = await new Roll(`1d100`).evaluate();
     await roll.toMessage({
-        flavor: `Determining random <strong>${rollFlavor}</strong>...`,
+        flavor: `Rolling 1d100 to determine random <strong>${rollFlavor}</strong>...`,
         speaker: ChatMessage.getSpeaker()
     });
 
     // Dramatic pause for the dice to finish rolling visually
     await new Promise(r => setTimeout(r, 1500));
 
-    // Determine the result (subtract 1 because arrays start at 0, dice start at 1)
-    const chosenIndex = roll.total - 1;
-    return await pack.getDocument(index[chosenIndex]._id);
+    // Convert the d100 (1-100) into a percentage (0.00 - 0.99) to select array index
+    const percentage = (roll.total - 1) / 100;
+    const chosenIndex = Math.floor(percentage * itemsArray.length);
+
+    // If we loaded full docs, return it immediately. Otherwise, get the full document by ID.
+    if (loadFullDocs) {
+        return itemsArray[chosenIndex];
+    } else {
+        return await pack.getDocument(itemsArray[chosenIndex]._id);
+    }
 }
 
 async function postSummary(results) {
@@ -246,11 +315,14 @@ async function postSummary(results) {
         speaker: ChatMessage.getSpeaker()
     });
 
+    // Encode the stats object into a dataset string so the listener can grab it
+    const statsDataset = s.statsObj ? JSON.stringify(s.statsObj) : "";
+
     const gmMessageContent = `
         ${summaryHtml}
         <hr>
         <p>Click below to automatically create a character with these items applied.</p>
-        <button class="create-random-pc-btn" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}">
+        <button class="create-random-pc-btn" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}" data-stats='${statsDataset}'>
             <i class="fas fa-user-plus"></i> Create ${results.actorName}
         </button>
     `;
