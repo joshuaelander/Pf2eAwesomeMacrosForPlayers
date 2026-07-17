@@ -226,8 +226,8 @@ async function promptOptions() {
                 </div>
                 <div class="form-group">
                     <label>Roll Random Stat Spread</label>
-                    <input type="checkbox" id="rand-stats" disabled />
-                    <p class="notes">Disabled while Random Class is selected.</p>
+                    <input type="checkbox" id="rand-stats" />
+                    <p class="notes">Manually overrides the created Actor's stats.</p>
                 </div>
             </form>
         `;
@@ -238,21 +238,12 @@ async function promptOptions() {
             render: (html) => {
                 const ancestryBox = html.find('#rand-ancestry');
                 const heritageBox = html.find('#rand-heritage');
-                const classBox = html.find('#rand-class');
-                const statBox = html.find('#rand-stats');
 
                 // Enforce Ancestry -> Heritage logic
                 ancestryBox.on('change', (e) => {
                     const isChecked = e.target.checked;
                     heritageBox.prop('disabled', !isChecked);
                     if (!isChecked) heritageBox.prop('checked', false);
-                });
-
-                // Enforce Class -> Stats logic
-                classBox.on('change', (e) => {
-                    const isChecked = e.target.checked;
-                    statBox.prop('disabled', isChecked);
-                    if (isChecked) statBox.prop('checked', false);
                 });
             },
             buttons: {
