@@ -158,10 +158,8 @@ async function analyzeCreature(targetActor) {
     let fakeAbility = ['Sneak Attack', 'Breath Weapon', 'Rend', 'Swallow Whole'].find(a => !truths.abilities.includes(a)) || "a special attack";
 
     if (targetActor.type === 'npc') {
-        const traits = targetActor.system?.traits?.value || [];
-        // Prioritize major creature types to find a matching fake creature, excluding humanoid
-        const validTraits = ['undead', 'beast', 'aberration', 'animal', 'construct', 'dragon', 'elemental', 'fey', 'fiend', 'celestial', 'fungus', 'plant', 'monitor', 'ooze'];
-        const mainTrait = traits.find(t => validTraits.includes(t)) || traits.find(t => t !== 'humanoid');
+        // Filter out humanoid to avoid generic matches
+        const targetTraits = (targetActor.system?.traits?.value || []).filter(t => t.toLowerCase() !== 'humanoid');
 
         const packs = ['pf2e.pathfinder-monster-core', 'pf2e.pathfinder-monster-core-2', 'pf2e.pathfinder-bestiary', 'pf2e.pathfinder-bestiary-2', 'pf2e.pathfinder-bestiary-3'];
         let possibleEntries = [];
@@ -173,10 +171,19 @@ async function analyzeCreature(targetActor) {
                 // Fetch rarity alongside traits and name
                 const index = await pack.getIndex({ fields: ["system.traits.value", "system.traits.rarity", "name"] });
                 for (const entry of index) {
+                    if (entry.name === targetActor.name) continue;
+
                     const entryTraits = entry.system?.traits?.value || [];
                     const entryRarity = entry.system?.traits?.rarity || 'common';
-                    if (mainTrait && entryTraits.includes(mainTrait) && entry.name !== targetActor.name) {
-                        possibleEntries.push({ _id: entry._id, pack: packKey, rarity: entryRarity, name: entry.name });
+
+                    // Calculate a match score based on shared valid traits
+                    let matchCount = 0;
+                    for (const t of targetTraits) {
+                        if (entryTraits.includes(t)) matchCount++;
+                    }
+
+                    if (matchCount > 0) {
+                        possibleEntries.push({ _id: entry._id, pack: packKey, rarity: entryRarity, name: entry.name, score: matchCount });
                     }
                 }
             } catch (e) {
@@ -185,10 +192,17 @@ async function analyzeCreature(targetActor) {
         }
 
         if (possibleEntries.length > 0) {
-            // Prioritize common creatures, fallback to uncommon
-            let commons = possibleEntries.filter(e => e.rarity === 'common');
-            let uncommons = possibleEntries.filter(e => e.rarity === 'uncommon');
-            let pool = commons.length > 0 ? commons : (uncommons.length > 0 ? uncommons : possibleEntries);
+            // Sort matches descending by how many traits they share with the target
+            possibleEntries.sort((a, b) => b.score - a.score);
+
+            // Keep the top 25 matches. This restores a healthy pool size for true 
+            // randomness while ensuring the lies remain highly thematic and believable.
+            let topMatches = possibleEntries.slice(0, 50);
+
+            // Prioritize common creatures within this top pool, fallback to uncommon
+            let commons = topMatches.filter(e => e.rarity === 'common');
+            let uncommons = topMatches.filter(e => e.rarity === 'uncommon');
+            let pool = commons.length > 0 ? commons : (uncommons.length > 0 ? uncommons : topMatches);
 
             const chosen = pool[Math.floor(Math.random() * pool.length)];
             fakeName = chosen.name;
@@ -376,9 +390,10 @@ async function performRecallKnowledge(html) {
 
     // Determine rolling actors
     const controlled = canvas?.tokens?.controlled ?? [];
+    const isPCSelected = controlled.length > 0;
     let targetActors = [];
 
-    if (controlled.length > 0) {
+    if (isPCSelected) {
         const seen = new Set();
         for (const token of controlled) {
             if (token.actor && !seen.has(token.actor.id)) {
@@ -453,25 +468,27 @@ async function performRecallKnowledge(html) {
     // Send secret message to GM
     await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis);
 
-    // Show a public card to the players
-    let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h3>Recall Knowledge</h3></header><div class="card-content">`;
-    for (const res of results) {
-        publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall any information about the creature using their skill in <b>${escapeHtml(res.skillLabel)}</b>.</p>`;
-    }
-    publicContent += `</div></div>`;
+    // Only show a public card to the players if a token was specifically selected
+    if (isPCSelected) {
+        let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h3>Recall Knowledge</h3></header><div class="card-content">`;
+        for (const res of results) {
+            publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall any information about the creature using their skill in <b>${escapeHtml(res.skillLabel)}</b>.</p>`;
+        }
+        publicContent += `</div></div>`;
 
-    await ChatMessage.create({
-        user: game.user.id,
-        speaker: ChatMessage.getSpeaker(),
-        content: publicContent
-    });
+        await ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker(),
+            content: publicContent
+        });
+    }
 }
 
 /**
- * Attempts to find the appropriate standard Recall Knowledge skill for a creature based on its traits.
+ * Attempts to find the appropriate standard and related Recall Knowledge skills for a creature.
  */
-function getSuggestedSkill(actor) {
-    if (!actor || actor.type !== 'npc') return null;
+function getSuggestedSkills(actor) {
+    if (!actor || actor.type !== 'npc') return [];
     const traits = actor.system?.traits?.value || [];
 
     // PF2e baseline trait to skill mappings
@@ -483,11 +500,28 @@ function getSuggestedSkill(actor) {
         spirit: 'occultism', undead: 'religion'
     };
 
+    // Map primary skills to relevant secondary alternatives and lore
+    const relatedMap = {
+        'arcana': ['arcana', 'occultism', 'nature', 'lore'],
+        'religion': ['religion', 'occultism', 'lore'],
+        'occultism': ['occultism', 'arcana', 'religion', 'lore'],
+        'nature': ['nature', 'arcana', 'lore'],
+        'society': ['society', 'lore'],
+        'crafting': ['crafting', 'lore']
+    };
+
+    let suggested = new Set();
     for (const trait of traits) {
-        if (rkMap[trait]) return rkMap[trait];
+        if (rkMap[trait]) {
+            const primary = rkMap[trait];
+            relatedMap[primary].forEach(s => suggested.add(s));
+        }
     }
 
-    return null;
+    // If no traits match, ensure generic Lore is always an option
+    if (suggested.size === 0) suggested.add('lore');
+
+    return Array.from(suggested);
 }
 
 /**
@@ -501,17 +535,21 @@ export function openRecallKnowledgeDialog() {
         'stealth': 'Stealth', 'lore': 'Lore (Generic)'
     };
 
-    // Determine suggested skill from target
+    // Determine suggested skills from target
     const targets = Array.from(game.user.targets ?? []);
-    let suggestedSkill = null;
+    let suggestedSkills = [];
     if (targets.length > 0) {
-        suggestedSkill = getSuggestedSkill(targets[0]?.actor);
+        suggestedSkills = getSuggestedSkills(targets[0]?.actor);
     }
 
     let skillOptions = '';
+    let firstSuggested = true;
     for (let [key, label] of Object.entries(skills)) {
-        const selected = (key === suggestedSkill) ? 'selected' : '';
-        const suggestedText = selected ? ' (Suggested)' : '';
+        const isSuggested = suggestedSkills.includes(key);
+        const selected = (isSuggested && firstSuggested) ? 'selected' : '';
+        if (isSuggested) firstSuggested = false;
+
+        const suggestedText = isSuggested ? ' (Suggested)' : '';
         skillOptions += `<option value="${escapeHtml(key)}" ${selected}>${escapeHtml(label)}${suggestedText}</option>`;
     }
 
