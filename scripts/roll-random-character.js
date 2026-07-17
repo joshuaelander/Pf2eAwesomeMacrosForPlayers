@@ -4,9 +4,9 @@
  * Features:
  * - Rolls random Ancestry, Heritage, Class, Background, and Stats.
  * - Triggers standard 3D dice using a 1d100 percentage trick for compendiums.
- * - Custom Stat Allocation algorithm (Rolls d4s to distribute 9-10 points, max 4 per stat).
+ * - Custom Stat Allocation algorithm scaling from Level 1 to 20.
  * - Applies generated stats via manual override directly to the created Actor.
- * - Properly triggers PF2e ChoiceSet dialogs upon Actor creation.
+ * - Properly triggers PF2e ChoiceSet dialogs and sets level upon Actor creation.
  */
 
 export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
@@ -26,15 +26,18 @@ export function handleGMCreateButton(message, html, data) {
         const dataset = e.currentTarget.dataset;
         const uuids = dataset.uuids.split(",");
         const actorName = dataset.actorname || "Random Generated PC";
+        const actorLevel = parseInt(dataset.level) || 1;
+
+        // Base system data, setting the character's level
+        let systemData = {
+            details: { level: { value: actorLevel } }
+        };
 
         // Retrieve and parse our generated stats
-        let systemData = {};
         if (dataset.stats) {
             const stats = JSON.parse(dataset.stats);
-            systemData = {
-                build: { attributes: { manual: true } },
-                abilities: {}
-            };
+            systemData.build = { attributes: { manual: true } };
+            systemData.abilities = {};
             for (const [key, val] of Object.entries(stats)) {
                 systemData.abilities[key] = { mod: val };
             }
@@ -73,7 +76,7 @@ export async function createCharacter() {
     const options = await promptOptions();
     if (!options) return;
 
-    const results = { uuids: [], summary: {} };
+    const results = { uuids: [], summary: { level: options.level } };
 
     const announce = async (title, content) => {
         await ChatMessage.create({
@@ -82,6 +85,9 @@ export async function createCharacter() {
         });
         await new Promise(r => setTimeout(r, 1000));
     };
+
+    // Announce Level
+    await announce("Target Level", `Level ${options.level}`);
 
     // 1. Ancestry (Optional)
     let ancestry = null;
@@ -147,17 +153,36 @@ export async function createCharacter() {
 
     // 5. Stats (Optional)
     if (options.rStats) {
-        let pointsLeft = options.dual ? 10 : 9;
+        // Determine brackets based on level
+        let basePoints = 9;
+        let statCap = 4;
+
+        if (options.level >= 20) {
+            basePoints = 25;
+            statCap = 6;
+        } else if (options.level >= 15) {
+            basePoints = 21;
+            statCap = 5;
+        } else if (options.level >= 10) {
+            basePoints = 17;
+            statCap = 5;
+        } else if (options.level >= 5) {
+            basePoints = 13;
+            statCap = 4;
+        }
+
+        let pointsLeft = options.dual ? basePoints + 1 : basePoints;
         const statsObj = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
         const statKeys = Object.keys(statsObj);
 
+        // Shuffle stat array
         for (let i = statKeys.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [statKeys[i], statKeys[j]] = [statKeys[j], statKeys[i]];
         }
 
         await ChatMessage.create({
-            content: `<strong>Allocating Stats...</strong> (Total Points to Distribute: ${pointsLeft})`,
+            content: `<strong>Allocating Stats...</strong><br>Total Points: ${pointsLeft} | Max Cap per Stat: ${statCap}`,
             speaker: ChatMessage.getSpeaker()
         });
         await new Promise(res => setTimeout(res, 1000));
@@ -165,10 +190,10 @@ export async function createCharacter() {
         while (pointsLeft > 0) {
             for (const key of statKeys) {
                 if (pointsLeft <= 0) break;
-                if (statsObj[key] >= 4) continue;
+                if (statsObj[key] >= statCap) continue;
 
                 const r = await new Roll("1d4").evaluate();
-                const maxAdd = 4 - statsObj[key];
+                const maxAdd = statCap - statsObj[key];
                 const toAdd = Math.min(r.total, pointsLeft, maxAdd);
 
                 if (toAdd > 0) {
@@ -203,6 +228,11 @@ async function promptOptions() {
     return new Promise((resolve) => {
         const dialogContent = `
             <form>
+                <div class="form-group">
+                    <label>Character Level</label>
+                    <input type="number" id="char-level" value="1" min="1" max="20" />
+                </div>
+                <hr>
                 <div class="form-group">
                     <label>Roll Ancestry</label>
                     <input type="checkbox" id="rand-ancestry" checked />
@@ -252,6 +282,7 @@ async function promptOptions() {
                     label: "Roll!",
                     callback: (html) => {
                         resolve({
+                            level: parseInt(html.find('#char-level').val()) || 1,
                             rAncestry: html.find('#rand-ancestry').is(':checked'),
                             rHeritage: html.find('#rand-heritage').is(':checked'),
                             rClass: html.find('#rand-class').is(':checked'),
@@ -308,6 +339,7 @@ async function getRandomDocWith3DDice(packKey, filterFn, rollFlavor, loadFullDoc
 async function postSummary(results) {
     const s = results.summary;
     let summaryHtml = `<h3>Random Generation Complete</h3><ul>`;
+    summaryHtml += `<li><strong>Level:</strong> ${s.level}</li>`;
     if (s.ancestry) summaryHtml += `<li><strong>Ancestry:</strong> ${s.ancestry}</li>`;
     if (s.heritage) summaryHtml += `<li><strong>Heritage:</strong> ${s.heritage}</li>`;
     if (s.class) summaryHtml += `<li><strong>Class:</strong> ${s.class}</li>`;
@@ -327,8 +359,8 @@ async function postSummary(results) {
         ${summaryHtml}
         <hr>
         <p>Click below to automatically create a character with these items applied.</p>
-        <button class="create-random-pc-btn" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}" data-stats='${statsDataset}'>
-            <i class="fas fa-user-plus"></i> Create ${results.actorName}
+        <button class="create-random-pc-btn" data-level="${s.level}" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}" data-stats='${statsDataset}'>
+            <i class="fas fa-user-plus"></i> Create Level ${s.level} ${results.actorName}
         </button>
     `;
 
