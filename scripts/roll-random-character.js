@@ -1,11 +1,11 @@
 /**
- * Enhanced Recall Knowledge Macro for PF2e
+ * Random Character Generator Macro for PF2e
  * 
  * Features:
- * - Rolls for selected tokens or the whole party.
- * - Properly calculates PF2e degrees of success (including Nat 1 / Nat 20 shifts).
- * - Analyzes targeted enemies to provide GMs with contextual hints (Truths & Lies)
- *   to handle Dubious Knowledge and Critical Failures easily.
+ * - Rolls random Ancestry, Heritage, Class, Background, and Stats.
+ * - Supports 3D dice rolling to chat.
+ * - Auto-generates a dynamic name (e.g., "Random Goblin Rogue").
+ * - Provides a GM-only button to instantly generate the actor.
  */
 
 export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
@@ -23,6 +23,7 @@ export function handleGMCreateButton(message, html, data) {
         btn.text("Creating...");
 
         const uuids = e.currentTarget.dataset.uuids.split(",");
+        const actorName = e.currentTarget.dataset.actorname || "Random Generated PC";
         const items = [];
 
         for (const uuid of uuids) {
@@ -32,7 +33,7 @@ export function handleGMCreateButton(message, html, data) {
         }
 
         const newActor = await Actor.create({
-            name: "Random Generated PC",
+            name: actorName,
             type: "character",
             items: items
         });
@@ -51,66 +52,87 @@ export async function createCharacter() {
 
     const announce = async (title, content) => {
         await ChatMessage.create({
-            content: `<strong>${title}:</strong> ${content}`,
+            content: `<strong>${title}:</strong> <span style="font-size: 1.1em; color: var(--color-text-dark-primary);">${content}</span>`,
             speaker: ChatMessage.getSpeaker()
         });
         await new Promise(r => setTimeout(r, 1000));
     };
 
-    const ancestry = await getRandomDoc("pf2e.ancestries");
+    // 1. Ancestry
+    const ancestry = await getRandomDoc("pf2e.ancestries", null, "Ancestry");
     if (ancestry) {
         results.uuids.push(ancestry.uuid);
         results.summary.ancestry = ancestry.name;
-        await announce("Ancestry", ancestry.name);
+        await announce("Ancestry Revealed", ancestry.name);
     }
 
-    const heritage = await getRandomDoc("pf2e.heritages", (i) => {
-        const isMatch = i.system?.ancestry?.value === ancestry?.slug;
-        const isVersatile = (i.system?.traits?.value || []).includes("versatile");
-        return isMatch || isVersatile;
-    });
-    if (heritage) {
-        results.uuids.push(heritage.uuid);
-        results.summary.heritage = heritage.name;
-        await announce("Heritage", heritage.name);
+    // 2. Heritage (Optional)
+    if (options.rHeritage) {
+        const heritage = await getRandomDoc("pf2e.heritages", (i) => {
+            const isMatch = i.system?.ancestry?.value === ancestry?.slug;
+            const isVersatile = (i.system?.traits?.value || []).includes("versatile");
+            return isMatch || isVersatile;
+        }, "Heritage");
+        if (heritage) {
+            results.uuids.push(heritage.uuid);
+            results.summary.heritage = heritage.name;
+            await announce("Heritage Revealed", heritage.name);
+        }
     }
 
+    // 3. Class (Optional)
     if (options.rClass) {
-        const class1 = await getRandomDoc("pf2e.classes");
+        const class1 = await getRandomDoc("pf2e.classes", null, "Class");
         if (class1) {
             results.uuids.push(class1.uuid);
             results.summary.class = class1.name;
-            await announce("Class", class1.name);
+            await announce("Class Revealed", class1.name);
         }
 
         if (options.dual) {
-            const class2 = await getRandomDoc("pf2e.classes", (i) => i._id !== class1?._id);
+            const class2 = await getRandomDoc("pf2e.classes", (i) => i._id !== class1?._id, "Dual Class");
             if (class2) {
                 results.uuids.push(class2.uuid);
                 results.summary.dualClass = class2.name;
-                await announce("Dual Class", class2.name);
+                await announce("Dual Class Revealed", class2.name);
             }
         }
     }
 
+    // 4. Background (Optional)
     if (options.bg) {
-        const background = await getRandomDoc("pf2e.backgrounds");
+        const background = await getRandomDoc("pf2e.backgrounds", null, "Background");
         if (background) {
             results.uuids.push(background.uuid);
             results.summary.background = background.name;
-            await announce("Background", background.name);
+            await announce("Background Revealed", background.name);
         }
     }
 
+    // 5. Stats (Optional)
     if (options.rStats && !options.rClass) {
         const stats = [];
+        await ChatMessage.create({
+            content: `<strong>Rolling 4d6 (drop lowest) for 6 Stats...</strong>`,
+            speaker: ChatMessage.getSpeaker()
+        });
+
         for (let i = 0; i < 6; i++) {
             const r = await new Roll("4d6kh3").evaluate();
+            await r.toMessage({ speaker: ChatMessage.getSpeaker() });
             stats.push(r.total);
+            await new Promise(res => setTimeout(res, 800));
         }
         results.summary.stats = stats.join(", ");
-        await announce("Stat Spread", results.summary.stats);
+        await announce("Stat Spread Result", results.summary.stats);
     }
+
+    // Compile dynamic name
+    let nameParts = ["Random"];
+    if (results.summary.ancestry) nameParts.push(results.summary.ancestry);
+    if (results.summary.class) nameParts.push(results.summary.class);
+    results.actorName = nameParts.join(" ").trim();
+    if (results.actorName === "Random") results.actorName = "Random Generated PC"; // Fallback
 
     await postSummary(results);
 }
@@ -119,6 +141,10 @@ async function promptOptions() {
     return new Promise((resolve) => {
         const dialogContent = `
             <form>
+                <div class="form-group">
+                    <label>Roll Heritage</label>
+                    <input type="checkbox" id="rand-heritage" checked />
+                </div>
                 <div class="form-group">
                     <label>Roll Random Class</label>
                     <input type="checkbox" id="rand-class" checked />
@@ -137,25 +163,28 @@ async function promptOptions() {
                     <p class="notes">Disabled while Random Class is selected.</p>
                 </div>
             </form>
-            <script>
-                const classBox = document.getElementById('rand-class');
-                const statBox = document.getElementById('rand-stats');
-                classBox.addEventListener('change', (e) => {
-                    statBox.disabled = e.target.checked;
-                    if (e.target.checked) statBox.checked = false;
-                });
-            </script>
         `;
 
         new Dialog({
             title: "Random PC Generator",
             content: dialogContent,
+            render: (html) => {
+                const classBox = html.find('#rand-class');
+                const statBox = html.find('#rand-stats');
+
+                classBox.on('change', (e) => {
+                    const isChecked = e.target.checked;
+                    statBox.prop('disabled', isChecked);
+                    if (isChecked) statBox.prop('checked', false);
+                });
+            },
             buttons: {
                 roll: {
                     icon: '<i class="fas fa-dice"></i>',
                     label: "Roll!",
                     callback: (html) => {
                         resolve({
+                            rHeritage: html.find('#rand-heritage').is(':checked'),
                             rClass: html.find('#rand-class').is(':checked'),
                             dual: html.find('#rand-dual').is(':checked'),
                             bg: html.find('#rand-bg').is(':checked'),
@@ -174,23 +203,31 @@ async function promptOptions() {
     });
 }
 
-async function getRandomDoc(packKey, filterFn) {
+async function getRandomDoc(packKey, filterFn, rollFlavor) {
     const pack = game.packs.get(packKey);
     if (!pack) return null;
 
-    // getIndex returns a Collection. We use .contents to turn it into a standard Array.
     const indexCollection = await pack.getIndex({ fields: ["system"] });
     let index = indexCollection.contents;
 
-    // Now we can safely use array methods like .filter() and .length
     if (filterFn) index = index.filter(filterFn);
-
     if (index.length === 0) return null;
 
-    // Grab a random entry from the array
-    const randomEntry = index[Math.floor(Math.random() * index.length)];
+    // Create an actual dice roll using the length of the filtered compendium
+    const roll = await new Roll(`1d${index.length}`).evaluate();
 
-    return await pack.getDocument(randomEntry._id);
+    // Send it to chat so 3D dice trigger
+    await roll.toMessage({
+        flavor: `Determining random <strong>${rollFlavor}</strong>...`,
+        speaker: ChatMessage.getSpeaker()
+    });
+
+    // Dramatic pause for the dice to finish rolling visually
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Determine the result (subtract 1 because arrays start at 0, dice start at 1)
+    const chosenIndex = roll.total - 1;
+    return await pack.getDocument(index[chosenIndex]._id);
 }
 
 async function postSummary(results) {
@@ -213,8 +250,8 @@ async function postSummary(results) {
         ${summaryHtml}
         <hr>
         <p>Click below to automatically create a character with these items applied.</p>
-        <button class="create-random-pc-btn" data-uuids="${results.uuids.join(',')}">
-            <i class="fas fa-user-plus"></i> Create Actor
+        <button class="create-random-pc-btn" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}">
+            <i class="fas fa-user-plus"></i> Create ${results.actorName}
         </button>
     `;
 
