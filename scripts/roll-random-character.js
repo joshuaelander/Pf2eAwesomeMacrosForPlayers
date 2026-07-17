@@ -5,6 +5,7 @@
  * - Rolls random Ancestry, Heritage, Class, Background, and Stats.
  * - Triggers standard 3D dice using a 1d100 percentage trick for compendiums.
  * - Custom Stat Allocation algorithm scaling from Level 1 to 20.
+ * - Accurately calculates PF2e 18+ stat costs (requires 2 points per +1 mod past 4).
  * - Suspenseful pop-up dialogs between rolls to build anticipation.
  * - Applies generated stats via manual override directly to the created Actor.
  * - Properly triggers PF2e ChoiceSet dialogs and sets level upon Actor creation.
@@ -37,6 +38,7 @@ export function handleGMCreateButton(message, html, data) {
             const stats = JSON.parse(dataset.stats);
             systemData.build = { attributes: { manual: true } };
             systemData.abilities = {};
+            // dataset.stats holds the final calculated MODIFIERS, not the raw points
             for (const [key, val] of Object.entries(stats)) {
                 systemData.abilities[key] = { mod: val };
             }
@@ -81,7 +83,7 @@ export async function createCharacter() {
         await new Promise(r => setTimeout(r, 1000));
     };
 
-    // Suspense Tracker: Auto-proceeds the first roll, prompts for everything else
+    // Suspense Tracker
     let isFirstRoll = true;
     const checkPrompt = async (message) => {
         if (isFirstRoll) {
@@ -100,7 +102,7 @@ export async function createCharacter() {
                     }
                 },
                 default: "ok",
-                close: () => resolve(false) // Abort if they close the window
+                close: () => resolve(false)
             }, { width: 300 }).render(true);
         });
     };
@@ -179,61 +181,75 @@ export async function createCharacter() {
         if (!await checkPrompt("Next: Allocating Random Stats")) return;
 
         let basePoints = 9;
-        let statCap = 4;
+        let statCap = 4; // Absolute max points you can put into a stat
 
         if (options.level >= 20) {
             basePoints = 25;
-            statCap = 6;
+            statCap = 8; // 8 points = +6 Mod
         } else if (options.level >= 15) {
             basePoints = 21;
-            statCap = 5;
+            statCap = 7; // 7 points = +5 Mod (halfway to +6)
         } else if (options.level >= 10) {
             basePoints = 17;
-            statCap = 5;
+            statCap = 6; // 6 points = +5 Mod
         } else if (options.level >= 5) {
             basePoints = 13;
-            statCap = 4;
+            statCap = 5; // 5 points = +4 Mod (halfway to +5)
         }
 
         let pointsLeft = options.dual ? basePoints + 1 : basePoints;
-        const statsObj = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
-        const statKeys = Object.keys(statsObj);
+        const statsPoints = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
+        const statKeys = Object.keys(statsPoints);
 
+        // Shuffle stat array
         for (let i = statKeys.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [statKeys[i], statKeys[j]] = [statKeys[j], statKeys[i]];
         }
 
         await ChatMessage.create({
-            content: `<strong>Allocating Stats...</strong><br>Total Points: ${pointsLeft} | Max Cap per Stat: ${statCap}`,
+            content: `<strong>Allocating Stats...</strong><br>Total Points: ${pointsLeft} | Max Points per Stat: ${statCap}`,
             speaker: ChatMessage.getSpeaker()
         });
         await new Promise(res => setTimeout(res, 1000));
 
+        // Allocate raw points
         while (pointsLeft > 0) {
             for (const key of statKeys) {
                 if (pointsLeft <= 0) break;
-                if (statsObj[key] >= statCap) continue;
+                if (statsPoints[key] >= statCap) continue;
 
                 const r = await new Roll("1d4").evaluate();
-                const maxAdd = statCap - statsObj[key];
+                const maxAdd = statCap - statsPoints[key];
                 const toAdd = Math.min(r.total, pointsLeft, maxAdd);
 
                 if (toAdd > 0) {
                     await r.toMessage({
-                        flavor: `Rolled ${r.total} -> Adding ${toAdd} to <strong>${key.toUpperCase()}</strong>`,
+                        flavor: `Rolled ${r.total} -> Adding ${toAdd} pts to <strong>${key.toUpperCase()}</strong>`,
                         speaker: ChatMessage.getSpeaker()
                     });
 
-                    statsObj[key] += toAdd;
+                    statsPoints[key] += toAdd;
                     pointsLeft -= toAdd;
                     await new Promise(res => setTimeout(res, 800));
                 }
             }
         }
 
-        results.summary.statsObj = statsObj;
-        results.summary.stats = `STR: ${statsObj.str}, DEX: ${statsObj.dex}, CON: ${statsObj.con}, INT: ${statsObj.int}, WIS: ${statsObj.wis}, CHA: ${statsObj.cha}`;
+        // Convert raw points into final PF2e Modifiers
+        const statsMods = {};
+        for (const key of statKeys) {
+            const pts = statsPoints[key];
+            // PF2e Rule: Modifiers over +4 take 2 points to increase by 1
+            statsMods[key] = pts <= 4 ? pts : 4 + Math.floor((pts - 4) / 2);
+        }
+
+        results.summary.statsObj = statsMods; // Pass actual modifiers to the actor creation
+
+        // Create formatting string showing BOTH modifier and points spent to avoid confusion
+        const formatStat = (key) => `${statsMods[key]} <span style="font-size: 0.8em; color: gray;">(${statsPoints[key]}pts)</span>`;
+        results.summary.stats = `<br>STR: ${formatStat('str')}<br>DEX: ${formatStat('dex')}<br>CON: ${formatStat('con')}<br>INT: ${formatStat('int')}<br>WIS: ${formatStat('wis')}<br>CHA: ${formatStat('cha')}`;
+
         await announce("Final Stat Spread", results.summary.stats);
     }
 
@@ -274,7 +290,7 @@ async function promptOptions() {
                 </div>
                 <div class="form-group">
                     <label>Roll Background</label>
-                    <input type="checkbox" id="rand-bg" checked />
+                    <input type="checkbox" id="rand-bg" />
                 </div>
                 <div class="form-group">
                     <label>Roll Random Stat Spread</label>
@@ -345,7 +361,7 @@ async function getRandomDocWith3DDice(packKey, filterFn, rollFlavor, loadFullDoc
         speaker: ChatMessage.getSpeaker()
     });
 
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 4000));
 
     const percentage = (roll.total - 1) / 100;
     const chosenIndex = Math.floor(percentage * itemsArray.length);
@@ -366,7 +382,7 @@ async function postSummary(results) {
     if (s.class) summaryHtml += `<li><strong>Class:</strong> ${s.class}</li>`;
     if (s.dualClass) summaryHtml += `<li><strong>Dual Class:</strong> ${s.dualClass}</li>`;
     if (s.background) summaryHtml += `<li><strong>Background:</strong> ${s.background}</li>`;
-    if (s.stats) summaryHtml += `<li><strong>Stats:</strong> ${s.stats}</li>`;
+    if (s.stats) summaryHtml += `<li><strong>Stats:</strong>${s.stats}</li>`;
     summaryHtml += `</ul>`;
 
     await ChatMessage.create({
