@@ -5,6 +5,7 @@
  * - Rolls random Ancestry, Heritage, Class, Background, and Stats.
  * - Triggers standard 3D dice using a 1d100 percentage trick for compendiums.
  * - Custom Stat Allocation algorithm scaling from Level 1 to 20.
+ * - Suspenseful pop-up dialogs between rolls to build anticipation.
  * - Applies generated stats via manual override directly to the created Actor.
  * - Properly triggers PF2e ChoiceSet dialogs and sets level upon Actor creation.
  */
@@ -28,12 +29,10 @@ export function handleGMCreateButton(message, html, data) {
         const actorName = dataset.actorname || "Random Generated PC";
         const actorLevel = parseInt(dataset.level) || 1;
 
-        // Base system data, setting the character's level
         let systemData = {
             details: { level: { value: actorLevel } }
         };
 
-        // Retrieve and parse our generated stats
         if (dataset.stats) {
             const stats = JSON.parse(dataset.stats);
             systemData.build = { attributes: { manual: true } };
@@ -50,18 +49,14 @@ export function handleGMCreateButton(message, html, data) {
             if (item) items.push(item.toObject());
         }
 
-        // 1. Create the naked actor FIRST
         const newActor = await Actor.create({
             name: actorName,
             type: "character",
             system: systemData
         });
 
-        // 2. Render the sheet so the GM can see the choice dialogs pop up
         newActor.sheet.render(true);
 
-        // 3. Inject the items. This simulates dropping them onto the sheet 
-        // and ensures PF2e fires all 'ChoiceSet' (Grant Item) dialogs.
         if (items.length > 0) {
             await newActor.createEmbeddedDocuments("Item", items);
         }
@@ -86,12 +81,36 @@ export async function createCharacter() {
         await new Promise(r => setTimeout(r, 1000));
     };
 
-    // Announce Level
+    // Suspense Tracker: Auto-proceeds the first roll, prompts for everything else
+    let isFirstRoll = true;
+    const checkPrompt = async (message) => {
+        if (isFirstRoll) {
+            isFirstRoll = false;
+            return true;
+        }
+        return new Promise((resolve) => {
+            new Dialog({
+                title: "Next Roll...",
+                content: `<div style="text-align: center; padding: 15px;"><h3>${message}</h3></div>`,
+                buttons: {
+                    ok: {
+                        icon: '<i class="fas fa-arrow-right"></i>',
+                        label: "Okay",
+                        callback: () => resolve(true)
+                    }
+                },
+                default: "ok",
+                close: () => resolve(false) // Abort if they close the window
+            }, { width: 300 }).render(true);
+        });
+    };
+
     await announce("Target Level", `Level ${options.level}`);
 
     // 1. Ancestry (Optional)
     let ancestry = null;
     if (options.rAncestry) {
+        if (!await checkPrompt("Next: Rolling for Ancestry")) return;
         ancestry = await getRandomDocWith3DDice("pf2e.ancestries", null, "Ancestry");
         if (ancestry) {
             results.uuids.push(ancestry.uuid);
@@ -100,8 +119,9 @@ export async function createCharacter() {
         }
     }
 
-    // 2. Heritage (Optional - Requires Ancestry to be rolled to filter properly)
+    // 2. Heritage (Optional)
     if (options.rHeritage && ancestry) {
+        if (!await checkPrompt("Next: Rolling for Heritage")) return;
         const ancestrySlug = ancestry.system?.slug || ancestry.slug || ancestry.name.toLowerCase().replace(/[^a-z0-9]+/gi, '-');
         const ancestryUuid = ancestry.uuid;
 
@@ -124,6 +144,7 @@ export async function createCharacter() {
 
     // 3. Class (Optional)
     if (options.rClass) {
+        if (!await checkPrompt("Next: Rolling for Class")) return;
         const class1 = await getRandomDocWith3DDice("pf2e.classes", null, "Class");
         if (class1) {
             results.uuids.push(class1.uuid);
@@ -132,6 +153,7 @@ export async function createCharacter() {
         }
 
         if (options.dual) {
+            if (!await checkPrompt("Next: Rolling for Dual Class")) return;
             const class2 = await getRandomDocWith3DDice("pf2e.classes", (i) => i._id !== class1?._id, "Dual Class");
             if (class2) {
                 results.uuids.push(class2.uuid);
@@ -143,6 +165,7 @@ export async function createCharacter() {
 
     // 4. Background (Optional)
     if (options.bg) {
+        if (!await checkPrompt("Next: Rolling for Background")) return;
         const background = await getRandomDocWith3DDice("pf2e.backgrounds", null, "Background");
         if (background) {
             results.uuids.push(background.uuid);
@@ -153,7 +176,8 @@ export async function createCharacter() {
 
     // 5. Stats (Optional)
     if (options.rStats) {
-        // Determine brackets based on level
+        if (!await checkPrompt("Next: Allocating Random Stats")) return;
+
         let basePoints = 9;
         let statCap = 4;
 
@@ -175,7 +199,6 @@ export async function createCharacter() {
         const statsObj = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
         const statKeys = Object.keys(statsObj);
 
-        // Shuffle stat array
         for (let i = statKeys.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [statKeys[i], statKeys[j]] = [statKeys[j], statKeys[i]];
@@ -214,7 +237,6 @@ export async function createCharacter() {
         await announce("Final Stat Spread", results.summary.stats);
     }
 
-    // Compile dynamic name
     let nameParts = ["Random"];
     if (results.summary.ancestry) nameParts.push(results.summary.ancestry);
     if (results.summary.class) nameParts.push(results.summary.class);
@@ -269,7 +291,6 @@ async function promptOptions() {
                 const ancestryBox = html.find('#rand-ancestry');
                 const heritageBox = html.find('#rand-heritage');
 
-                // Enforce Ancestry -> Heritage logic
                 ancestryBox.on('change', (e) => {
                     const isChecked = e.target.checked;
                     heritageBox.prop('disabled', !isChecked);
