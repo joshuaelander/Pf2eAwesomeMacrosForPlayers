@@ -4,7 +4,7 @@
  * Features:
  * - Rolls for selected tokens or the whole party.
  * - Player view asks for specific questions (Weaknesses, Saves, etc.).
- * - GM view retrieves all information at once.
+ * - GM view retrieves all information at once, plus rolls for related skills.
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
  */
 
@@ -74,10 +74,14 @@ async function analyzeCreature(targetActor) {
     const highestSave = saveMap[0]?.name || 'Unknown';
     const lowestSave = saveMap[2]?.name || 'Unknown';
 
-    // Extract Abilities & Attacks
+    // Extract Abilities & Attacks (Filter out spells)
     const items = targetActor.items || [];
-    const abilities = items.filter(i => i.type === 'action' || i.type === 'spell').map(i => i.name).filter(n => n && n.length > 2);
+    const hasSpells = items.some(i => i.type === 'spell' || i.type === 'spellcastingEntry');
+    const abilities = items.filter(i => i.type === 'action').map(i => i.name).filter(n => n && n.length > 2);
+    if (hasSpells) abilities.push("can cast spells");
+
     const attacks = items.filter(i => i.type === 'melee' || i.type === 'weapon').map(i => i.name).filter(n => n && n.length > 2);
+
     const shuffledAbilities = abilities.sort(() => 0.5 - Math.random());
     const shuffledAttacks = attacks.sort(() => 0.5 - Math.random());
 
@@ -194,7 +198,10 @@ async function analyzeCreature(targetActor) {
                         const fResistances = (fAttrs.resistances || []).map(r => r.type.toLowerCase());
                         const fItems = fakeDoc.items || [];
 
-                        const fActions = fItems.filter(i => i.type === 'action' || i.type === 'spell').map(i => i.name).filter(n => n && n.length > 2);
+                        const fHasSpells = fItems.some(i => i.type === 'spell' || i.type === 'spellcastingEntry');
+                        const fActions = fItems.filter(i => i.type === 'action').map(i => i.name).filter(n => n && n.length > 2);
+                        if (fHasSpells) fActions.push("can cast spells");
+
                         const fAttacks = fItems.filter(i => i.type === 'melee' || i.type === 'weapon').map(i => i.name).filter(n => n && n.length > 2);
 
                         const fSaves = fakeDoc.system?.saves || {};
@@ -266,7 +273,6 @@ function getHintForDegree(degree, analysis, question, otherText) {
     if (!analysis) return "<em>Target an enemy to receive dynamic information hints.</em>";
     const { truths, lies } = analysis;
 
-    // GM Master View (Clicked by GM)
     if (question === 'all') {
         let truthsHtml = `Weaknesses: ${truths.weaknesses.join(', ') || 'None'} | Immunities: ${truths.immunities.join(', ') || 'None'} | Saves: High ${truths.highestSave} / Low ${truths.lowestSave} | Abilities: ${truths.abilities.join(', ') || 'None'}`;
         let liesHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> W: ${l.fakeWeakness}, I: ${l.fakeImmunity}, High Save: ${l.fakeHighSave}, Low Save: ${l.fakeLowSave}, Ability: ${l.fakeAbility}</li>`).join('');
@@ -278,7 +284,6 @@ function getHintForDegree(degree, analysis, question, otherText) {
         return "";
     }
 
-    // Player View (Clicked by Player)
     let truthAns = getTruthString(question, truths, otherText);
 
     if (degree === 'Critical Success') {
@@ -300,31 +305,40 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
 
     let rows = '';
     for (const res of results) {
-        const color = colorMap[res.degree] || '#000000';
-        const d20display = res.d20 !== null ? `${res.d20}` : '—';
-        const modifier = res.total - (res.d20 || 0);
-        const breakdown = res.d20 !== null ? `${d20display} + ${modifier}` : `${res.total}`;
-        const hintHtml = getHintForDegree(res.degree, creatureAnalysis, question, otherText);
+        const p = res.primary;
+        const color = colorMap[p.degree] || '#000000';
+        const hintHtml = getHintForDegree(p.degree, creatureAnalysis, question, otherText);
+
+        let relatedHtml = '';
+        if (res.related && res.related.length > 0) {
+            relatedHtml = `<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #ccc; font-size: 0.85em; color: #444;">`;
+            relatedHtml += `<strong>Related Rolls:</strong><br>`;
+            relatedHtml += res.related.map(r => {
+                const rColor = colorMap[r.degree] || '#000';
+                return `<span>${escapeHtml(r.label)}: <b>${r.total}</b> (<span style="color:${rColor}; font-weight:bold;">${r.degree}</span>)</span>`;
+            }).join(' | ');
+            relatedHtml += `</div>`;
+        }
 
         rows += `
       <div class="recall-knowledge-row" style="border-left: 4px solid ${color}; padding-left:8px; margin-bottom:10px; background: rgba(0,0,0,0.03); padding-top:4px; padding-bottom:4px;">
         <div style="display:flex; justify-content: space-between; align-items: baseline;">
             <strong>${escapeHtml(res.actorName)}</strong>
-            <span style="font-size: 0.9em; color:#444;">${escapeHtml(res.skillLabel)}</span>
+            <span style="font-size: 0.9em; color:#444;">${escapeHtml(p.label)}</span>
         </div>
         <div style="margin-top: 2px;">
-            <span>Result: <b>${res.total}</b> (${escapeHtml(breakdown)})</span>
+            <span>Result: <b>${p.total}</b> (${escapeHtml(p.breakdown)})</span>
             &nbsp;|&nbsp;
-            <span style="color:${color}; font-weight:bold; text-transform:uppercase; font-size:0.9em;">${escapeHtml(res.degree)}</span>
+            <span style="color:${color}; font-weight:bold; text-transform:uppercase; font-size:0.9em;">${escapeHtml(p.degree)}</span>
         </div>
-        <div style="margin-top: 4px; font-size: 0.85em; font-family: 'Signika', sans-serif;">
+        ${relatedHtml}
+        <div style="margin-top: 6px; font-size: 0.85em; font-family: 'Signika', sans-serif;">
             ${hintHtml}
         </div>
       </div>
     `;
     }
 
-    // Adjust title if a specific question was asked
     const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
     const qTitle = qLabels[question] ? ` - Asked: ${escapeHtml(qLabels[question])}` : '';
     const title = creatureName ? `Recall Knowledge: ${escapeHtml(creatureName)} (DC ${dc})${qTitle}` : `Recall Knowledge (DC ${dc})${qTitle}`;
@@ -344,6 +358,46 @@ function getSkillInfo(actor, skillKey) {
         if (foundKey) return skills[foundKey];
     }
     return null;
+}
+
+function getBestLore(actor) {
+    const systemData = actor.system ?? actor.data?.system ?? {};
+    const skills = systemData.skills ?? {};
+    let best = null;
+    let maxMod = -Infinity;
+    for (const [key, skill] of Object.entries(skills)) {
+        if (skill.lore || key.toLowerCase().includes('lore')) {
+            const mod = Number(skill.mod ?? skill.value ?? skill.totalModifier ?? skill.total ?? 0);
+            if (mod > maxMod) {
+                maxMod = mod;
+                best = { key, label: skill.label ?? key };
+            }
+        }
+    }
+    return best;
+}
+
+async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null) {
+    const skillInfo = getSkillInfo(actor, skillKey);
+    const skillLabel = customLabel || (skillInfo?.label ?? skillKey);
+    const modifier = Number(skillInfo?.mod ?? skillInfo?.value ?? skillInfo?.totalModifier ?? skillInfo?.total ?? 0);
+    const safeModifier = Number.isFinite(modifier) ? modifier : 0;
+    const formula = `1d20 ${safeModifier >= 0 ? '+' : '-'} ${Math.abs(safeModifier)}`;
+
+    let roll;
+    try { roll = await new Roll(formula).evaluate({ async: true }); }
+    catch (err) { roll = { total: 0, dice: [] }; }
+
+    let d20Result = null;
+    try {
+        const d20Term = roll.dice?.find(d => d.faces === 20);
+        d20Result = d20Term?.results?.[0]?.result ?? null;
+    } catch (e) { d20Result = null; }
+
+    const degree = calculateDegreeOfSuccess(roll.total, dc, d20Result);
+    const breakdown = d20Result !== null ? `${d20Result} + ${roll.total - d20Result}` : roll.total;
+
+    return { label: skillLabel, total: roll.total, d20: d20Result, degree: degree, breakdown: breakdown };
 }
 
 async function performRecallKnowledge(html) {
@@ -389,25 +443,33 @@ async function performRecallKnowledge(html) {
         return;
     }
 
+    const relatedMap = {
+        'arcana': ['occultism', 'nature', 'lore'],
+        'religion': ['occultism', 'lore'],
+        'occultism': ['arcana', 'religion', 'lore'],
+        'nature': ['arcana', 'lore'],
+        'society': ['lore'],
+        'crafting': ['lore']
+    };
+
     const rollPromises = targetActors.map(async (actor) => {
-        const skillInfo = getSkillInfo(actor, skillKey);
-        const skillLabel = skillInfo?.label ?? skillKey;
-        const modifier = Number(skillInfo?.mod ?? skillInfo?.value ?? skillInfo?.totalModifier ?? skillInfo?.total ?? 0);
-        const safeModifier = Number.isFinite(modifier) ? modifier : 0;
-        const formula = `1d20 ${safeModifier >= 0 ? '+' : '-'} ${Math.abs(safeModifier)}`;
+        // Roll Primary Selected Skill
+        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc);
 
-        let roll;
-        try { roll = await new Roll(formula).evaluate({ async: true }); }
-        catch (err) { roll = { total: 0, dice: [], toJSON: () => ({}) }; }
+        // Roll Related Skills secretly for the GM to reference
+        const relatedRolls = [];
+        const relatedKeys = relatedMap[skillKey] || [];
 
-        let d20Result = null;
-        try {
-            const d20Term = roll.dice?.find(d => d.faces === 20);
-            d20Result = d20Term?.results?.[0]?.result ?? null;
-        } catch (e) { d20Result = null; }
+        for (const relKey of relatedKeys) {
+            if (relKey === 'lore') {
+                const bestLore = getBestLore(actor);
+                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label));
+            } else {
+                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc));
+            }
+        }
 
-        const degree = calculateDegreeOfSuccess(roll.total, dc, d20Result);
-        return { actorId: actor.id, actorName: actor.name, skillLabel: skillLabel, total: roll.total ?? 0, d20: d20Result, degree: degree, roll: roll };
+        return { actorId: actor.id, actorName: actor.name, primary: primaryRoll, related: relatedRolls };
     });
 
     let results;
@@ -422,39 +484,35 @@ async function performRecallKnowledge(html) {
 
         let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h3>Recall Knowledge</h3></header><div class="card-content">`;
         for (const res of results) {
-            publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall information about the creature using their skill in <b>${escapeHtml(res.skillLabel)}</b>${askedStr}.</p>`;
+            publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall information about the creature using their skill in <b>${escapeHtml(res.primary.label)}</b>${askedStr}.</p>`;
         }
         publicContent += `</div></div>`;
         await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker(), content: publicContent });
     }
 }
 
-function getSuggestedSkills(actor) {
-    if (!actor || actor.type !== 'npc') return [];
+function getSuggestedSkill(actor) {
+    if (!actor || actor.type !== 'npc') return null;
     const traits = actor.system?.traits?.value || [];
     const rkMap = { aberration: 'occultism', animal: 'nature', astral: 'occultism', beast: 'nature', celestial: 'religion', construct: 'crafting', dragon: 'arcana', elemental: 'arcana', ethereal: 'occultism', fey: 'nature', fiend: 'religion', fungus: 'nature', humanoid: 'society', monitor: 'religion', ooze: 'occultism', plant: 'nature', spirit: 'occultism', undead: 'religion' };
-    const relatedMap = { 'arcana': ['arcana', 'occultism', 'nature', 'lore'], 'religion': ['religion', 'occultism', 'lore'], 'occultism': ['occultism', 'arcana', 'religion', 'lore'], 'nature': ['nature', 'arcana', 'lore'], 'society': ['society', 'lore'], 'crafting': ['crafting', 'lore'] };
 
-    let suggested = new Set();
     for (const trait of traits) {
-        if (rkMap[trait]) relatedMap[rkMap[trait]].forEach(s => suggested.add(s));
+        if (rkMap[trait]) return rkMap[trait];
     }
-    if (suggested.size === 0) suggested.add('lore');
-    return Array.from(suggested);
+    return null;
 }
 
 export function openRecallKnowledgeDialog() {
     const skills = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
     const targets = Array.from(game.user.targets ?? []);
-    let suggestedSkills = targets.length > 0 ? getSuggestedSkills(targets[0]?.actor) : [];
+
+    // Only fetch the single direct trait match for the dropdown
+    let suggestedSkill = targets.length > 0 ? getSuggestedSkill(targets[0]?.actor) : null;
 
     let skillOptions = '';
-    let firstSuggested = true;
     for (let [key, label] of Object.entries(skills)) {
-        const isSuggested = suggestedSkills.includes(key);
-        const selected = (isSuggested && firstSuggested) ? 'selected' : '';
-        if (isSuggested) firstSuggested = false;
-        skillOptions += `<option value="${escapeHtml(key)}" ${selected}>${escapeHtml(label)}${isSuggested ? ' (Suggested)' : ''}</option>`;
+        const isSuggested = (key === suggestedSkill);
+        skillOptions += `<option value="${escapeHtml(key)}" ${isSuggested ? 'selected' : ''}>${escapeHtml(label)}${isSuggested ? ' (Suggested)' : ''}</option>`;
     }
 
     const hasTarget = (targets.length > 0);
@@ -462,7 +520,6 @@ export function openRecallKnowledgeDialog() {
         ? `<p style="color: green;"><em><i class="fas fa-bullseye"></i> Target detected. DC and traits will be calculated secretly.</em></p>`
         : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No enemy targeted. You must target an enemy!</em></p>`;
 
-    // Render logic branching based on GM status
     const isGM = game.user.isGM;
     const questionHtml = !isGM ? `
       <div class="form-group">
@@ -510,8 +567,4 @@ export function openRecallKnowledgeDialog() {
             }
         }
     }).render(true);
-}
-
-if (typeof game !== "undefined" && game.user) {
-    openRecallKnowledgeDialog();
 }
