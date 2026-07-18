@@ -385,7 +385,7 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null) {
     const formula = `1d20 ${safeModifier >= 0 ? '+' : '-'} ${Math.abs(safeModifier)}`;
 
     let roll;
-    try { roll = await new Roll(formula).evaluate({ async: true }); }
+    try { roll = await new Roll(formula).evaluate(); }
     catch (err) { roll = { total: 0, dice: [] }; }
 
     let d20Result = null;
@@ -449,7 +449,12 @@ async function performRecallKnowledge(html) {
         'occultism': ['arcana', 'religion', 'lore'],
         'nature': ['arcana', 'lore'],
         'society': ['lore'],
-        'crafting': ['lore']
+        'crafting': ['nature', 'medicine', 'lore'],
+        'athletics': ['acrobatics', 'lore'],
+        'acrobatics': ['athletics', 'lore'],
+        'stealth': ['deception','lore'],
+        'survival': ['nature', 'lore'],
+        'medicine': ['nature', 'lore'],
     };
 
     const rollPromises = targetActors.map(async (actor) => {
