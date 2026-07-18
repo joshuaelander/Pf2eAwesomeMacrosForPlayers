@@ -6,6 +6,7 @@
  * - Player view asks for specific questions (Weaknesses, Saves, etc.).
  * - GM view retrieves all information at once, plus rolls for related skills.
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
+ * - Shares the primary d20 roll across all related skill checks.
  */
 
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
@@ -315,7 +316,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
             relatedHtml += `<strong>Related Rolls:</strong><br>`;
             relatedHtml += res.related.map(r => {
                 const rColor = colorMap[r.degree] || '#000';
-                return `<span>${escapeHtml(r.label)}: <b>${r.total}</b> (<span style="color:${rColor}; font-weight:bold;">${r.degree}</span>)</span>`;
+                return `<span>${escapeHtml(r.label)}: <b>${r.total}</b> (${escapeHtml(r.breakdown)}) <span style="color:${rColor}; font-weight:bold;">[${r.degree}]</span></span>`;
             }).join(' | ');
             relatedHtml += `</div>`;
         }
@@ -340,8 +341,8 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     }
 
     const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
-    const qTitle = qLabels[question] ? ` - Asked: ${escapeHtml(qLabels[question])}` : '';
-    const title = creatureName ? `Recall Knowledge: ${escapeHtml(creatureName)} (DC ${dc})${qTitle}` : `Recall Knowledge (DC ${dc})${qTitle}`;
+    const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
+    const title = creatureName ? `Recall Knowledge: ${escapeHtml(creatureName)} <br>(DC ${dc})${qTitle}` : `Recall Knowledge (DC ${dc})${qTitle}`;
 
     const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h3 style="border-bottom: 2px solid #333; padding-bottom: 4px;">${title}</h3>${rows}</div>`;
     const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
@@ -377,27 +378,36 @@ function getBestLore(actor) {
     return best;
 }
 
-async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null) {
+async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forcedD20 = null) {
     const skillInfo = getSkillInfo(actor, skillKey);
     const skillLabel = customLabel || (skillInfo?.label ?? skillKey);
     const modifier = Number(skillInfo?.mod ?? skillInfo?.value ?? skillInfo?.totalModifier ?? skillInfo?.total ?? 0);
     const safeModifier = Number.isFinite(modifier) ? modifier : 0;
-    const formula = `1d20 ${safeModifier >= 0 ? '+' : '-'} ${Math.abs(safeModifier)}`;
 
-    let roll;
-    try { roll = await new Roll(formula).evaluate(); }
-    catch (err) { roll = { total: 0, dice: [] }; }
+    let d20Result = forcedD20;
+    let total = 0;
 
-    let d20Result = null;
-    try {
-        const d20Term = roll.dice?.find(d => d.faces === 20);
-        d20Result = d20Term?.results?.[0]?.result ?? null;
-    } catch (e) { d20Result = null; }
+    if (d20Result === null) {
+        const formula = `1d20 ${safeModifier >= 0 ? '+' : '-'} ${Math.abs(safeModifier)}`;
+        let roll;
+        try { roll = await new Roll(formula).evaluate(); }
+        catch (err) { roll = { total: 0, dice: [] }; }
 
-    const degree = calculateDegreeOfSuccess(roll.total, dc, d20Result);
-    const breakdown = d20Result !== null ? `${d20Result} + ${roll.total - d20Result}` : roll.total;
+        try {
+            const d20Term = roll.dice?.find(d => d.faces === 20);
+            d20Result = d20Term?.results?.[0]?.result ?? null;
+        } catch (e) { d20Result = null; }
 
-    return { label: skillLabel, total: roll.total, d20: d20Result, degree: degree, breakdown: breakdown };
+        total = roll.total;
+    } else {
+        total = d20Result + safeModifier;
+    }
+
+    const degree = calculateDegreeOfSuccess(total, dc, d20Result);
+    const modDisplay = safeModifier >= 0 ? `+${safeModifier}` : `${safeModifier}`;
+    const breakdown = d20Result !== null ? `${d20Result}${modDisplay}` : total;
+
+    return { label: skillLabel, total: total, d20: d20Result, degree: degree, breakdown: breakdown };
 }
 
 async function performRecallKnowledge(html) {
@@ -452,7 +462,7 @@ async function performRecallKnowledge(html) {
         'crafting': ['nature', 'medicine', 'lore'],
         'athletics': ['acrobatics', 'lore'],
         'acrobatics': ['athletics', 'lore'],
-        'stealth': ['deception','lore'],
+        'stealth': ['deception', 'lore'],
         'survival': ['nature', 'lore'],
         'medicine': ['nature', 'lore'],
     };
@@ -460,17 +470,18 @@ async function performRecallKnowledge(html) {
     const rollPromises = targetActors.map(async (actor) => {
         // Roll Primary Selected Skill
         const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc);
+        const primaryD20 = primaryRoll.d20; // Extract the raw d20 result
 
-        // Roll Related Skills secretly for the GM to reference
+        // Roll Related Skills secretly for the GM to reference using the SAME d20
         const relatedRolls = [];
         const relatedKeys = relatedMap[skillKey] || [];
 
         for (const relKey of relatedKeys) {
             if (relKey === 'lore') {
                 const bestLore = getBestLore(actor);
-                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label));
+                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label, primaryD20));
             } else {
-                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc));
+                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc, null, primaryD20));
             }
         }
 
