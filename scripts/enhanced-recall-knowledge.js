@@ -12,6 +12,8 @@
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
 export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/documents/blueprint-recipe-alchemical.webp";
 
+const SKILL_DICTIONARY = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
+
 function escapeHtml(unsafe) {
     if (unsafe === undefined || unsafe === null) return '';
     return String(unsafe)
@@ -275,8 +277,8 @@ function getHintForDegree(degree, analysis, question, otherText) {
     const { truths, lies } = analysis;
 
     if (question === 'all') {
-        let truthsHtml = `Weaknesses: ${truths.weaknesses.join(', ') || 'None'} | Immunities: ${truths.immunities.join(', ') || 'None'} | Saves: High ${truths.highestSave} / Low ${truths.lowestSave} | Abilities: ${truths.abilities.join(', ') || 'None'}`;
-        let liesHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> W: ${l.fakeWeakness}, I: ${l.fakeImmunity}, High Save: ${l.fakeHighSave}, Low Save: ${l.fakeLowSave}, Ability: ${l.fakeAbility}</li>`).join('');
+        let truthsHtml = `Weaknesses: ${truths.weaknesses.join(', ') || 'None'} <br>Immunities: ${truths.immunities.join(', ') || 'None'} <br>Saves: High ${truths.highestSave} / Low ${truths.lowestSave} <br>Abilities: ${truths.abilities.join(', ') || 'None'}`;
+        let liesHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> Weakness: ${l.fakeWeakness}, Immunity: ${l.fakeImmunity}, High Save: ${l.fakeHighSave}, Low Save: ${l.fakeLowSave}, Ability: ${l.fakeAbility}</li>`).join('');
 
         if (degree === 'Critical Success') return `<span style="color:#008800;"><b>Reveal Multiple (You are sure that...):</b><br>${truthsHtml}</span>`;
         if (degree === 'Success') return `<span style="color:#0055aa;"><b>Reveal One (You think that...):</b><br>${truthsHtml}</span>`;
@@ -301,7 +303,7 @@ function getHintForDegree(degree, analysis, question, otherText) {
     return "";
 }
 
-async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText) {
+async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel) {
     const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000' };
 
     let rows = '';
@@ -317,7 +319,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
             relatedHtml += res.related.map(r => {
                 const rColor = colorMap[r.degree] || '#000';
                 return `<span>${escapeHtml(r.label)}: <b>${r.total}</b> (${escapeHtml(r.breakdown)}) <span style="color:${rColor}; font-weight:bold;">[${r.degree}]</span></span>`;
-            }).join(' | ');
+            }).join(' <br>');
             relatedHtml += `</div>`;
         }
 
@@ -342,7 +344,14 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
 
     const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
     const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
-    const title = creatureName ? `Recall Knowledge: ${escapeHtml(creatureName)} <br>(DC ${dc})${qTitle}` : `Recall Knowledge (DC ${dc})${qTitle}`;
+
+    // Inject the suggested skill if it exists, otherwise just show the DC
+    const dcText = suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`;
+
+    // Stacked title formatting
+    const title = creatureName
+        ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>(${dcText})${qTitle}`
+        : `Recall Knowledge<br>(${dcText})${qTitle}`;
 
     const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h3 style="border-bottom: 2px solid #333; padding-bottom: 4px;">${title}</h3>${rows}</div>`;
     const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
@@ -430,6 +439,15 @@ async function performRecallKnowledge(html) {
     dc = calculateRKDC(t?.actor);
     creatureAnalysis = await analyzeCreature(t?.actor);
 
+    // Determine the formatted label for the target's suggested skill to pass to the chat card
+    let suggestedSkillLabel = null;
+    if (t?.actor) {
+        const sKey = getSuggestedSkill(t.actor);
+        if (sKey && SKILL_DICTIONARY[sKey]) {
+            suggestedSkillLabel = SKILL_DICTIONARY[sKey];
+        }
+    }
+
     const controlled = canvas?.tokens?.controlled ?? [];
     const isPCSelected = controlled.length > 0;
     let targetActors = [];
@@ -492,7 +510,7 @@ async function performRecallKnowledge(html) {
     try { results = await Promise.all(rollPromises); }
     catch (err) { ui.notifications.error('Error performing rolls.'); return; }
 
-    await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText);
+    await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel);
 
     if (isPCSelected) {
         const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
@@ -519,14 +537,13 @@ function getSuggestedSkill(actor) {
 }
 
 export function openRecallKnowledgeDialog() {
-    const skills = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
     const targets = Array.from(game.user.targets ?? []);
 
     // Only fetch the single direct trait match for the dropdown
     let suggestedSkill = targets.length > 0 ? getSuggestedSkill(targets[0]?.actor) : null;
 
     let skillOptions = '';
-    for (let [key, label] of Object.entries(skills)) {
+    for (let [key, label] of Object.entries(SKILL_DICTIONARY)) {
         const isSuggested = (key === suggestedSkill);
         skillOptions += `<option value="${escapeHtml(key)}" ${isSuggested ? 'selected' : ''}>${escapeHtml(label)}${isSuggested ? ' (Suggested)' : ''}</option>`;
     }
