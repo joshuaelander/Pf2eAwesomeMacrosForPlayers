@@ -7,6 +7,8 @@
  * - GM view retrieves all information at once, plus rolls for related skills.
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
  * - Shares the primary d20 roll across all related skill checks.
+ * - Player blind roll (All skills) if clicked with no target.
+ * - Displays the Truth alongside Dubious Knowledge on failures.
  */
 
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
@@ -25,6 +27,8 @@ function escapeHtml(unsafe) {
 }
 
 function calculateDegreeOfSuccess(total, dc, d20) {
+    if (dc === null) return 'Unknown'; // For targetless GM rolls
+
     const difference = total - dc;
     let degreeValue = 0;
     if (difference >= 10) degreeValue = 3;
@@ -273,7 +277,7 @@ function getLieString(qType, lie, otherText) {
 }
 
 function getHintForDegree(degree, analysis, question, otherText) {
-    if (!analysis) return "<em>Target an enemy to receive dynamic information hints.</em>";
+    if (!analysis) return "<em>No target selected.</em>";
     const { truths, lies } = analysis;
 
     if (question === 'all') {
@@ -282,7 +286,7 @@ function getHintForDegree(degree, analysis, question, otherText) {
 
         if (degree === 'Critical Success') return `<span style="color:#008800;"><b>Reveal Multiple (You are sure that...):</b><br>${truthsHtml}</span>`;
         if (degree === 'Success') return `<span style="color:#0055aa;"><b>Reveal One (You think that...):</b><br>${truthsHtml}</span>`;
-        if (degree === 'Failure') return `<span style="color:#aa5500;"><b>Dubious Knowledge (You think that...):</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+        if (degree === 'Failure') return `<span style="color:#aa5500;"><b>Dubious Knowledge (You think that...):</b><br><br><b>True Info:</b><br>${truthsHtml}<br><br><b>False Info:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
         if (degree === 'Critical Failure') return `<span style="color:#aa0000;"><b>Confident Falsehood (You are sure that...):</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
         return "";
     }
@@ -295,27 +299,28 @@ function getHintForDegree(degree, analysis, question, otherText) {
         return `<span style="color:#0055aa;"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
     } else if (degree === 'Failure') {
         const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-        return `<span style="color:#aa5500;"><b>Dubious Knowledge (or No Info) — Pick a lie to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+        return `<span style="color:#aa5500;"><b>True Info:</b> ${truthAns}<br><br><b>Dubious Knowledge (or No Info) — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
     } else if (degree === 'Critical Failure') {
         const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You are sure that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-        return `<span style="color:#aa0000;"><b>Confident Falsehood — Pick a lie to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+        return `<span style="color:#aa0000;"><b>Confident Falsehood — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
     }
     return "";
 }
 
 async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel) {
-    const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000' };
+    const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000', 'Unknown': '#555555' };
 
     let rows = '';
     for (const res of results) {
         const p = res.primary;
         const color = colorMap[p.degree] || '#000000';
-        const hintHtml = getHintForDegree(p.degree, creatureAnalysis, question, otherText);
+
+        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText) : '<em>No target selected.</em>';
 
         let relatedHtml = '';
         if (res.related && res.related.length > 0) {
             relatedHtml = `<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #ccc; font-size: 0.85em; color: #444;">`;
-            relatedHtml += `<strong>Related Rolls:</strong><br>`;
+            relatedHtml += `<strong>Related Skills:</strong><br>`;
             relatedHtml += res.related.map(r => {
                 const rColor = colorMap[r.degree] || '#000';
                 return `<span>${escapeHtml(r.label)}: <b>${r.total}</b> (${escapeHtml(r.breakdown)}) <span style="color:${rColor}; font-weight:bold;">[${r.degree}]</span></span>`;
@@ -327,14 +332,15 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
       <div class="recall-knowledge-row" style="border-left: 4px solid ${color}; padding-left:8px; margin-bottom:10px; background: rgba(0,0,0,0.03); padding-top:4px; padding-bottom:4px;">
         <div style="display:flex; justify-content: space-between; align-items: baseline;">
             <strong>${escapeHtml(res.actorName)}</strong>
-            <span style="font-size: 0.9em; color:#444;">${escapeHtml(p.label)}</span>
+            <span style="font-size: 0.9em; color:#444; margin-right: 4px;">Primary Skill</span>
         </div>
         <div style="margin-top: 2px;">
-            <span>Result: <b>${p.total}</b> (${escapeHtml(p.breakdown)})</span>
+            <span>${escapeHtml(p.label)}: <b>${p.total}</b> (${escapeHtml(p.breakdown)})</span>
             &nbsp;|&nbsp;
             <span style="color:${color}; font-weight:bold; text-transform:uppercase; font-size:0.9em;">${escapeHtml(p.degree)}</span>
         </div>
         ${relatedHtml}
+        <br>
         <div style="margin-top: 6px; font-size: 0.85em; font-family: 'Signika', sans-serif;">
             ${hintHtml}
         </div>
@@ -345,15 +351,14 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
     const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
 
-    // Inject the suggested skill if it exists, otherwise just show the DC
-    const dcText = suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`;
+    const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`) : `Unknown DC`;
 
     // Stacked title formatting
     const title = creatureName
         ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>(${dcText})${qTitle}`
         : `Recall Knowledge<br>(${dcText})${qTitle}`;
 
-    const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h3 style="border-bottom: 2px solid #333; padding-bottom: 4px;">${title}</h3>${rows}</div>`;
+    const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h4 style="border-bottom: 2px solid #333; padding-bottom: 4px;">${title}</h4>${rows}</div>`;
     const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
 
     await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: content, whisper: gmIds, blind: true });
@@ -412,7 +417,7 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forced
         total = d20Result + safeModifier;
     }
 
-    const degree = calculateDegreeOfSuccess(total, dc, d20Result);
+    const degree = dc !== null ? calculateDegreeOfSuccess(total, dc, d20Result) : 'Unknown';
     const modDisplay = safeModifier >= 0 ? `+${safeModifier}` : `${safeModifier}`;
     const breakdown = d20Result !== null ? `${d20Result}${modDisplay}` : total;
 
@@ -424,30 +429,14 @@ async function performRecallKnowledge(html) {
     const question = html.find('[name="question"]').val() || 'all';
     const otherText = html.find('[name="otherText"]').val() || '';
 
-    let creatureName = "Unknown Creature";
-    let creatureAnalysis = null;
-    let dc = 15;
     const targets = Array.from(game.user.targets ?? []);
+    const hasTarget = targets.length > 0;
 
-    if (targets.length === 0) {
-        ui.notifications.warn('You must target an enemy to Recall Knowledge.');
-        return;
-    }
+    const dc = hasTarget ? calculateRKDC(targets[0]?.actor) : null;
+    const creatureName = hasTarget ? (targets[0]?.name ?? targets[0]?.actor?.name ?? 'Unknown Creature') : null;
+    const creatureAnalysis = hasTarget ? await analyzeCreature(targets[0]?.actor) : null;
 
-    const t = targets[0];
-    creatureName = t?.name ?? t?.actor?.name ?? 'Unknown Creature';
-    dc = calculateRKDC(t?.actor);
-    creatureAnalysis = await analyzeCreature(t?.actor);
-
-    // Determine the formatted label for the target's suggested skill to pass to the chat card
-    let suggestedSkillLabel = null;
-    if (t?.actor) {
-        const sKey = getSuggestedSkill(t.actor);
-        if (sKey && SKILL_DICTIONARY[sKey]) {
-            suggestedSkillLabel = SKILL_DICTIONARY[sKey];
-        }
-    }
-
+    // Determine target actors (Auto-select PC if player forgot, or whole party if GM has no tokens)
     const controlled = canvas?.tokens?.controlled ?? [];
     const isPCSelected = controlled.length > 0;
     let targetActors = [];
@@ -458,8 +447,10 @@ async function performRecallKnowledge(html) {
             if (token.actor && !seen.has(token.actor.id)) { targetActors.push(token.actor); seen.add(token.actor.id); }
         }
     } else {
-        if (game.actors.party) {
-            targetActors = Array.from(game.actors.party.members);
+        if (!game.user.isGM && game.user.character) {
+            targetActors = [game.user.character]; // Auto-select assigned character for players
+        } else if (game.actors.party) {
+            targetActors = Array.from(game.actors.party.members); // GM default to Party
         } else {
             targetActors = game.actors.filter(a => a.type === 'character' && (a.system?.details?.alliance === 'party' || a.alliance === 'party'));
             if (targetActors.length === 0) targetActors = game.actors.filter(a => a.type === 'character' && a.hasPlayerOwner);
@@ -469,6 +460,56 @@ async function performRecallKnowledge(html) {
     if (targetActors.length === 0) {
         ui.notifications.error('No target actors found (no controlled tokens and no party actors).');
         return;
+    }
+
+    // --- Player Blind Roll (All Skills) if no target is selected ---
+    if (!hasTarget && !game.user.isGM) {
+        const actor = targetActors[0];
+
+        let roll;
+        try { roll = await new Roll(`1d20`).evaluate(); }
+        catch (err) { ui.notifications.error("Roll error."); return; }
+        const d20 = roll.dice[0].results[0].result;
+
+        const skillPromises = Object.keys(SKILL_DICTIONARY).map(async key => {
+            if (key === 'lore') {
+                const best = getBestLore(actor);
+                if (!best) return null;
+                return await evaluateSkillRoll(actor, best.key, null, best.label, d20);
+            }
+            return await evaluateSkillRoll(actor, key, null, null, d20);
+        });
+        const allSkills = (await Promise.all(skillPromises)).filter(x => x);
+
+        let blindHtml = `<div style="padding:6px; font-family: 'Signika', sans-serif;">
+            <h4 style="border-bottom: 2px solid #333; padding-bottom: 4px;">Blind Recall Knowledge</h4>
+            <p style="margin-bottom: 4px;"><strong>Actor:</strong> ${escapeHtml(actor.name)}</p>
+            <p style="margin-top: 0;"><strong>Base d20 Roll:</strong> <b>${d20}</b></p>
+            <ul style="list-style: none; padding-left: 0; margin-bottom: 10px;">`;
+
+        for (let r of allSkills) {
+            const mod = r.total - d20;
+            blindHtml += `<li style="margin-bottom: 4px; padding: 4px; background: rgba(0,0,0,0.03); border-left: 3px solid #666;">
+                <strong>${escapeHtml(r.label)}:</strong> <b>${r.total}</b> 
+                <span style="font-size:0.85em; color:#555;">(Mod: ${mod >= 0 ? '+' : ''}${mod})</span>
+            </li>`;
+        }
+        blindHtml += `</ul><p style="font-size: 0.85em; color: #444; margin-bottom: 0;"><em>No target selected.</em></p></div>`;
+
+        const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
+
+        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: blindHtml, whisper: gmIds, blind: true });
+        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: actor }), content: `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content"><p><b>${escapeHtml(actor.name)}</b> tries to recall information about something...</p></div></div>` });
+        return;
+    }
+
+    // Determine the formatted label for the target's suggested skill to pass to the chat card
+    let suggestedSkillLabel = null;
+    if (hasTarget) {
+        const sKey = getSuggestedSkill(targets[0].actor);
+        if (sKey && SKILL_DICTIONARY[sKey]) {
+            suggestedSkillLabel = SKILL_DICTIONARY[sKey];
+        }
     }
 
     const relatedMap = {
@@ -512,11 +553,11 @@ async function performRecallKnowledge(html) {
 
     await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel);
 
-    if (isPCSelected) {
+    if (isPCSelected || (!game.user.isGM && targetActors.length === 1)) {
         const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
         const askedStr = game.user.isGM ? '' : ` to learn about its <b>${escapeHtml(qLabels[question])}</b>`;
 
-        let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h3>Recall Knowledge</h3></header><div class="card-content">`;
+        let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content">`;
         for (const res of results) {
             publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall information about the creature using their skill in <b>${escapeHtml(res.primary.label)}</b>${askedStr}.</p>`;
         }
@@ -549,11 +590,15 @@ export function openRecallKnowledgeDialog() {
     }
 
     const hasTarget = (targets.length > 0);
+    const isGM = game.user.isGM;
+
+    // Adjusted warning string to reflect the new No Target behavior
     const targetWarning = hasTarget
         ? `<p style="color: green;"><em><i class="fas fa-bullseye"></i> Target detected. DC and traits will be calculated secretly.</em></p>`
-        : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No enemy targeted. You must target an enemy!</em></p>`;
+        : (isGM
+            ? `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target. Will roll selected skill for the whole party.</em></p>`
+            : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target. Will roll a blind d20 for ALL your skills instead.</em></p>`);
 
-    const isGM = game.user.isGM;
     const questionHtml = !isGM ? `
       <div class="form-group">
         <label>Question:</label>
