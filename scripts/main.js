@@ -1,4 +1,5 @@
 // Define the name of the folder where the macros will be placed
+const MODULE_ID = "pf2e-awesome-macros-for-players";
 const MACRO_FOLDER_NAME = "PF2e Awesome Macros For Players";
 const MACRO_FOLDER_COLOR = "#990000";
 
@@ -14,6 +15,12 @@ import {
     ENHANCED_RECALL_MACRO_NAME,
     ENHANCED_RECALL_MACRO_ICON,
 } from "./enhanced-recall-knowledge.js";
+
+import {
+    addExplorationActivity,
+    EXPLORATION_ACTIVITY_MACRO_NAME,
+    EXPLORATION_ACTIVITY_MACRO_ICON,
+} from "./easy-exploration.js";
 
 // Hook to handle the GM clicking the "Create Actor" button on the chat card
 Hooks.on("renderChatMessage", (message, html, data) => {
@@ -34,28 +41,45 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog = openRecallKnowledgeDialog;
     game.pf2eAwesomePlayerMacros.createCharacter = createCharacter;
 
-    // Get or Create the Target Folder
-    let targetFolderId = null;
     if (game.user.isGM) {
-        const folder = await getOrCreateFolder(MACRO_FOLDER_NAME, 'Macro');
-        if (folder) {
-            targetFolderId = folder.id;
+        // Get the current version from your module.json
+        const currentVersion = game.modules.get(MODULE_ID)?.version || "1.0.0";
+
+        let folder = game.folders.getName(MACRO_FOLDER_NAME);
+        const storedVersion = folder ? folder.getFlag(MODULE_ID, "moduleVersion") : null;
+
+        // If the versions don't match, run the cleanup and creation logic
+        if (currentVersion !== storedVersion) {
+            // Clean up the old mess
+            await wipeOldMacros();
+
+            folder = await getOrCreateFolder(MACRO_FOLDER_NAME, 'Macro');
+            let targetFolderId = folder ? folder.id : null;
+
+            // Programmatically create the macro buttons 
+            createMacroDocument(
+                ROLL_RANDOM_CHARACTER_MACRO_NAME,
+                ROLL_RANDOM_CHARACTER_MACRO_ICON,
+                `game.pf2eAwesomePlayerMacros.createCharacter();`,
+                targetFolderId
+            );
+
+            createMacroDocument(
+                ENHANCED_RECALL_MACRO_NAME,
+                ENHANCED_RECALL_MACRO_ICON,
+                `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();`,
+                targetFolderId
+            );
+
+            createMacroDocument(
+                EXPLORATION_ACTIVITY_MACRO_NAME,
+                EXPLORATION_ACTIVITY_MACRO_ICON,
+                `game.pf2eAwesomePlayerMacros.addExplorationActivity();`,
+                targetFolderId
+            );
+
+            await folder.setFlag(MODULE_ID, "moduleVersion", currentVersion);
         }
-
-        // Programmatically create the macro buttons 
-        createMacroDocument(
-            ROLL_RANDOM_CHARACTER_MACRO_NAME,
-            ROLL_RANDOM_CHARACTER_MACRO_ICON,
-            `game.pf2eAwesomePlayerMacros.createCharacter();`,
-            targetFolderId
-        );
-
-        createMacroDocument(
-            ENHANCED_RECALL_MACRO_NAME,
-            ENHANCED_RECALL_MACRO_ICON,
-            `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();`,
-            targetFolderId
-        );
     }
 
     console.log('PF2e Awesome Macros for Players | All module logic and macros initialized.');
@@ -127,5 +151,23 @@ async function createMacroDocument(name, icon, command, folderId) {
         }
     } else {
         console.warn(`PF2e Awesome Macros For Players | Cannot auto-create macro for non-GM user: ${name}.`);
+    }
+}
+
+async function wipeOldMacros() {
+    // 1. Delete macros using the module flag
+    const oldMacros = game.macros.filter(m => m.flags?.[MODULE_ID]?.isModuleMacro);
+    const oldMacroIds = oldMacros.map(m => m.id);
+
+    if (oldMacroIds.length > 0) {
+        await Macro.deleteDocuments(oldMacroIds);
+        console.log(`PF2e Awesome Macros for Players | Deleted ${oldMacroIds.length} outdated macros.`);
+    }
+
+    // 2. Delete the folder itself
+    const oldFolder = game.folders.getName(MACRO_FOLDER_NAME);
+    if (oldFolder) {
+        await oldFolder.delete({ deleteSubfolders: true, deleteContents: true });
+        console.log(`PF2e Awesome Macros for Players | Deleted outdated folder.`);
     }
 }
