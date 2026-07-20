@@ -1,7 +1,7 @@
 # Pf2eAwesomeMacrosForPlayers
 Overview: A repo with more useful macros, this time for players to use!
 
-Contents:
+Contents: \
 1.) Macro for rolling recall knowledge, asking which skill to use and what question you want to ask. 
 It will then roll the skill and give the result to the GM. It will also give helpful hints to the GM to answer better.
 
