@@ -40,6 +40,7 @@ Hooks.once('ready', async () => {
     // Register Global Functions 
     game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog = openRecallKnowledgeDialog;
     game.pf2eAwesomePlayerMacros.createCharacter = createCharacter;
+    game.pf2eAwesomePlayerMacros.addExplorationActivity = addExplorationActivity;
 
     if (game.user.isGM) {
         // Get the current version from your module.json
