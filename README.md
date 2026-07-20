@@ -8,6 +8,10 @@ It will then roll the skill and give the result to the GM. It will also give hel
 2.) Macro for rolling a random new character with various options to enable/disable. 
 (Example: You can choose to roll a random character with or without a class, with or without a background, etc.)
 
+3.) Easy exploration for updating or mass updating people exploration activities. Easy to stop and start any activity. 
+
+4.) Monster Hunter for ranger to "Hunt Prey" and call the enhanced recall knowledge macro.
+
 If you'd like you can help support me over on Patreon to see this and many other fun tools, maps, etc related to PF2e. Linked here: https://patreon.com/AeneasPF2e
 
 Author: Aeneas (Joshua Elander)
