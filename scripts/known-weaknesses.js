@@ -3,6 +3,7 @@
  * * Verifies a token and target are selected.
  * * Posts Devise a Stratagem action to chat.
  * * Applies "Effect: Devise a Stratagem" to the Investigator (rolling d20 & applying roll substitution).
+ * * Posts Known Weaknesses feat/rules card.
  * * Automatically launches the Enhanced Recall Knowledge dialog.
  */
 
@@ -13,7 +14,7 @@ export async function executeKnownWeaknesses() {
     // Ensure exactly one token is selected
     const controlled = canvas?.tokens?.controlled ?? [];
     if (controlled.length !== 1) {
-        ui.notifications.warn("Please select exactly one of your tokens.");
+        ui.notifications.warn("Please select your token.");
         return;
     }
 
@@ -29,7 +30,6 @@ export async function executeKnownWeaknesses() {
     const target = targets[0];
 
     // --- 1. Find and Post Devise a Stratagem Action to Chat ---
-    // Specifically search for the action item first so we don't accidentally select the class feat item
     const deviseAction = actor.itemTypes.action.find(a => a.slug === "devise-a-stratagem")
         || actor.items.find(i => i.type === "action" && (i.slug === "devise-a-stratagem" || i.name === "Devise a Stratagem"))
         || actor.itemTypes.feat.find(f => f.slug === "devise-a-stratagem");
@@ -86,23 +86,33 @@ export async function executeKnownWeaknesses() {
         ui.notifications.warn(`Could not find "${effectName}" in the compendiums.`);
     }
 
-    // --- 3. Post Known Weaknesses Reminder Card ---
-    await ChatMessage.create({
-        user: game.user.id,
-        speaker: ChatMessage.getSpeaker({ token: token }),
-        content: `
-            <div class="pf2e chat-card">
-                <header class="card-header flexrow">
-                    <h3>Known Weaknesses</h3>
-                </header>
-                <div class="card-content">
-                    <p>Because <strong>${actor.name}</strong> has the Known Weaknesses feat, they get a free Recall Knowledge check against <strong>${target.name}</strong>.</p>
-                    <p style="font-size: 0.9em; border-left: 3px solid #18520b; padding-left: 5px; background: rgba(0,0,0,0.05);">
-                        <em><strong>Critical Success:</strong> You notice a weakness! You and your allies gain a +1 circumstance bonus to your next attack roll against ${target.name}.</em>
-                    </p>
-                </div>
-            </div>`
-    });
+    // --- 3. Post Known Weaknesses Card / Rules Reminder ---
+    // Try to post the official Feat card from the character sheet first
+    const knownWeaknessesFeat = actor.itemTypes.feat.find(f => f.slug === "known-weaknesses")
+        || actor.items.find(i => i.slug === "known-weaknesses" || i.name === "Known Weaknesses");
+
+    if (knownWeaknessesFeat) {
+        await knownWeaknessesFeat.toMessage();
+    } else {
+        // Fallback rules reference card
+        await ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker({ token: token }),
+            content: `
+                <div class="pf2e chat-card">
+                    <header class="card-header flexrow">
+                        <h3>Known Weaknesses</h3>
+                    </header>
+                    <div class="card-content">
+                        <p><strong>${actor.name}</strong> attempts a free Recall Knowledge check against <strong>${target.name}</strong> as part of Devising a Stratagem.</p>
+                        <ul style="font-size: 0.9em; padding-left: 15px; margin: 6px 0;">
+                            <li><strong>Success:</strong> Learn information as normal.</li>
+                            <li><strong>Critical Success:</strong> You and your allies gain a +1 circumstance bonus to your next attack roll against <strong>${target.name}</strong>.</li>
+                        </ul>
+                    </div>
+                </div>`
+        });
+    }
 
     // --- 4. Trigger Enhanced Recall Knowledge ---
     if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog) {

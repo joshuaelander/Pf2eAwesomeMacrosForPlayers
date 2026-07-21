@@ -13,7 +13,7 @@ export async function executeMonsterHunter() {
     // Ensure exactly one token is selected (Safely chained for tablet UI)
     const controlled = canvas?.tokens?.controlled ?? [];
     if (controlled.length !== 1) {
-        ui.notifications.warn("Please select exactly one of your tokens.");
+        ui.notifications.warn("Please select your token.");
         return;
     }
 
