@@ -28,13 +28,20 @@ import {
     MONSTER_HUNTER_MACRO_ICON,
 } from "./monster-hunter.js";
 
+import {
+    executeKnownWeaknesses,
+    KNOWN_WEAKNESSES_MACRO_NAME,
+    KNOWN_WEAKNESSES_MACRO_ICON,
+} from "./known-weaknesses.js";
+
 // --- THE DESIRED MACRO STATE ---
 // Add any new macros to this array. The Smart Sync will handle the rest!
 const DESIRED_MACROS = [
     { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();` },
     { name: ENHANCED_RECALL_MACRO_NAME, icon: ENHANCED_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();` },
     { name: EXPLORATION_ACTIVITY_MACRO_NAME, icon: EXPLORATION_ACTIVITY_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.addExplorationActivity();` },
-    { name: MONSTER_HUNTER_MACRO_NAME, icon: MONSTER_HUNTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMonsterHunter();` }
+    { name: MONSTER_HUNTER_MACRO_NAME, icon: MONSTER_HUNTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMonsterHunter();` },
+    { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();` }
 ];
 
 // Hook to handle the GM clicking the "Create Actor" button on the chat card
@@ -149,6 +156,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.createCharacter = createCharacter;
     game.pf2eAwesomePlayerMacros.addExplorationActivity = addExplorationActivity;
     game.pf2eAwesomePlayerMacros.executeMonsterHunter = executeMonsterHunter;
+    game.pf2eAwesomePlayerMacros.executeKnownWeaknesses = executeKnownWeaknesses;
 
     if (game.user.isGM) {
         const currentVersion = game.modules.get(MODULE_ID)?.version || "1.0.0";
