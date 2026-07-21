@@ -7,7 +7,7 @@
  */
 
 export const KNOWN_WEAKNESSES_MACRO_NAME = "Known Weaknesses (Devise a Stratagem)";
-export const KNOWN_WEAKNESSES_MACRO_ICON = "icons/skills/targeting/crosshair-bars-half-white.webp";
+export const KNOWN_WEAKNESSES_MACRO_ICON = "icons/skills/targeting/crosshair-arrowhead-blue.webp";
 
 export async function executeKnownWeaknesses() {
     // Ensure exactly one token is selected
