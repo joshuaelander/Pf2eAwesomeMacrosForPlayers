@@ -3,18 +3,17 @@
  * * Verifies a token and target are selected.
  * * Posts Devise a Stratagem action to chat.
  * * Applies "Effect: Devise a Stratagem" to the Investigator (rolling d20 & applying roll substitution).
- * * Posts Known Weaknesses feat/rules card.
- * * Automatically launches the Enhanced Recall Knowledge dialog.
+ * * Checks if the Investigator has the "Known Weaknesses" feat before launching Enhanced Recall Knowledge.
  */
 
 export const KNOWN_WEAKNESSES_MACRO_NAME = "Known Weaknesses (Devise a Stratagem)";
-export const KNOWN_WEAKNESSES_MACRO_ICON = "icons/skills/targeting/crosshair-arrowhead-blue.webp";
+export const KNOWN_WEAKNESSES_MACRO_ICON = "icons/skills/targeting/crosshair-bars-half-white.webp";
 
 export async function executeKnownWeaknesses() {
     // Ensure exactly one token is selected
     const controlled = canvas?.tokens?.controlled ?? [];
     if (controlled.length !== 1) {
-        ui.notifications.warn("Please select your token.");
+        ui.notifications.warn("Please select exactly one of your tokens.");
         return;
     }
 
@@ -86,38 +85,17 @@ export async function executeKnownWeaknesses() {
         ui.notifications.warn(`Could not find "${effectName}" in the compendiums.`);
     }
 
-    // --- 3. Post Known Weaknesses Card / Rules Reminder ---
-    // Try to post the official Feat card from the character sheet first
-    const knownWeaknessesFeat = actor.itemTypes.feat.find(f => f.slug === "known-weaknesses")
-        || actor.items.find(i => i.slug === "known-weaknesses" || i.name === "Known Weaknesses");
+    // --- 3. Check for Known Weaknesses Feat & Trigger Enhanced Recall Knowledge ---
+    const hasKnownWeaknesses = actor.itemTypes.feat.some(f => f.slug === "known-weaknesses")
+        || actor.items.some(i => i.slug === "known-weaknesses" || i.name === "Known Weaknesses");
 
-    if (knownWeaknessesFeat) {
-        await knownWeaknessesFeat.toMessage();
+    if (hasKnownWeaknesses) {
+        if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog) {
+            game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();
+        } else {
+            ui.notifications.error("Enhanced Recall Knowledge logic not found. Make sure the module is active.");
+        }
     } else {
-        // Fallback rules reference card
-        await ChatMessage.create({
-            user: game.user.id,
-            speaker: ChatMessage.getSpeaker({ token: token }),
-            content: `
-                <div class="pf2e chat-card">
-                    <header class="card-header flexrow">
-                        <h3>Known Weaknesses</h3>
-                    </header>
-                    <div class="card-content">
-                        <p><strong>${actor.name}</strong> attempts a free Recall Knowledge check against <strong>${target.name}</strong> as part of Devising a Stratagem.</p>
-                        <ul style="font-size: 0.9em; padding-left: 15px; margin: 6px 0;">
-                            <li><strong>Success:</strong> Learn information as normal.</li>
-                            <li><strong>Critical Success:</strong> You and your allies gain a +1 circumstance bonus to your next attack roll against <strong>${target.name}</strong>.</li>
-                        </ul>
-                    </div>
-                </div>`
-        });
-    }
-
-    // --- 4. Trigger Enhanced Recall Knowledge ---
-    if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog) {
-        game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();
-    } else {
-        ui.notifications.error("Enhanced Recall Knowledge logic not found. Make sure the module is active.");
+        ui.notifications.info(`${actor.name} does not have the Known Weaknesses feat. Skipping Recall Knowledge.`);
     }
 }
