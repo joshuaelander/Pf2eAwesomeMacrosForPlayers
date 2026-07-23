@@ -1,6 +1,6 @@
 /**
  * PF2e Combat Assessment Macro
- * * Displays all melee strikes with dedicated, perfectly aligned buttons for their MAP variants.
+ * * Displays active (ready) melee strikes with dedicated, aligned buttons for MAP variants.
  * * Auto-targets the player's assigned character if no token is selected.
  * * Rolls the selected strike variant.
  * * Hooks into the chat message to read the attack's outcome.
@@ -41,22 +41,22 @@ export async function executeCombatAssessment() {
     const hasOA = actor.itemTypes.feat.some(f => f.slug === "observational-analysis") || actor.items.some(i => i.slug === "observational-analysis" || i.name === "Observational Analysis");
 
     if (!hasCA && !hasOA) {
-        ui.notifications.info(`${actor.name} does not appear to have Combat Assessment or Observational Analysis, but proceeding anyway.`);
+        return ui.notifications.info(`${actor.name} does not appear to have Combat Assessment.`);
     }
 
-    // Filter for only Melee Strikes (Combat Assessment requires a melee Strike)
-    const meleeStrikes = actor.system.actions.filter(a => a.type === "strike" && a.item.isMelee);
+    // Filter for only Melee Strikes that are actually drawn/ready (excludes stowed weapons)
+    const meleeStrikes = actor.system.actions.filter(a => a.type === "strike" && a.item.isMelee && a.ready);
     if (meleeStrikes.length === 0) {
-        return ui.notifications.error("No melee strikes found on this character.");
+        return ui.notifications.error("No ready melee strikes found on this character.");
     }
 
     // Build the custom UI rows for each weapon and its MAP variants
     let contentHtml = `
         <style>
             .ca-strike-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 6px; background: rgba(0,0,0,0.05); border: 1px solid var(--color-border-light-2); border-radius: 4px; }
-            .ca-strike-name { flex: 1; font-weight: bold; margin-right: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.05em; }
+            .ca-strike-name { flex: 1; font-weight: bold; width: 68px; margin-right: 10px; white-space: wrap; font-size: 1.05em; }
             .ca-btn-group { display: flex; gap: 6px; flex-shrink: 0; }
-            .ca-strike-btn { padding: 6px 0; line-height: 14px; cursor: pointer; border: 1px solid var(--color-border-dark-4); border-radius: 4px; background: rgba(255,255,255,0.7); width: 48px; text-align: center; font-weight: bold; }
+            .ca-strike-btn { padding: 6px 0; line-height: 14px; cursor: pointer; border: 1px solid var(--color-border-dark-4); border-radius: 4px; background: rgba(255,255,255,0.7); width: 88px; text-align: center; font-weight: bold; }
             .ca-strike-btn:hover { background: rgba(0,0,0,0.1); }
         </style>
         <div style="font-family: 'Signika', sans-serif; margin-bottom: 5px;">
@@ -77,7 +77,7 @@ export async function executeCombatAssessment() {
     });
 
     contentHtml += `
-            <p style="font-size: 0.85em; color: #555; margin-top: 10px; font-style: italic;">If your strike hits, Recall Knowledge will trigger automatically.</p>
+            <p style="font-size: 0.85em; color: #555; margin-top: 10px; font-style: italic;">On a hit, Recall Knowledge will trigger automatically.</p>
         </div>
     `;
 
@@ -122,7 +122,7 @@ export async function executeCombatAssessment() {
                         await ChatMessage.create({
                             user: game.user.id,
                             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-                            content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} hit ${target.name} and immediately attempts to Recall Knowledge.${bonusText}`
+                            content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} hit ${target.name} and is attempting to Recall Knowledge.${bonusText}`
                         });
 
                         // Pass the calculated bonus directly into the RK dialog!
