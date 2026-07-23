@@ -1,7 +1,7 @@
 /**
  * PF2e Combat Assessment Macro
- * * Prompts the user to select a melee strike.
- * * Rolls the selected strike.
+ * * Displays all melee strikes with dedicated buttons for their MAP variants.
+ * * Rolls the selected strike variant.
  * * Hooks into the chat message to read the attack's outcome.
  * * On a hit/crit, applies Observational Analysis bonuses (if applicable) and launches Enhanced RK.
  */
@@ -40,82 +40,103 @@ export async function executeCombatAssessment() {
         return ui.notifications.error("No melee strikes found on this character.");
     }
 
-    // Build the weapon selection dropdown
-    const optionsHtml = meleeStrikes.map((s, idx) => `<option value="${idx}">${s.label}</option>`).join("");
+    // Build the custom UI rows for each weapon and its MAP variants
+    let contentHtml = `
+        <style>
+            .ca-strike-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 6px; background: rgba(0,0,0,0.05); border: 1px solid var(--color-border-light-2); border-radius: 4px; }
+            .ca-strike-name { flex: 1; font-weight: bold; margin-right: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.05em; }
+            .ca-btn-group { display: flex; gap: 6px; }
+            .ca-strike-btn { padding: 6px 10px; line-height: 14px; cursor: pointer; border: 1px solid var(--color-border-dark-4); border-radius: 4px; background: rgba(255,255,255,0.7); min-width: 45px; font-weight: bold; }
+            .ca-strike-btn:hover { background: rgba(0,0,0,0.1); }
+        </style>
+        <div style="font-family: 'Signika', sans-serif; margin-bottom: 5px;">
+            <p style="margin-top: 0; margin-bottom: 12px; font-size: 0.95em;">Select your melee strike and its Multiple Attack Penalty.</p>
+    `;
 
-    new Dialog({
-        title: "Combat Assessment",
-        content: `
-            <form style="margin-bottom: 10px;">
-                <div class="form-group">
-                    <label style="font-weight: bold;">Select Attack:</label>
-                    <select id="strike-select" style="width: 100%; padding: 4px;">${optionsHtml}</select>
+    meleeStrikes.forEach((strike, strikeIdx) => {
+        contentHtml += `
+            <div class="ca-strike-row">
+                <span class="ca-strike-name" title="${strike.label}">${strike.label}</span>
+                <div class="ca-btn-group">
+                    ${strike.variants.map((variant, variantIdx) => `
+                        <button type="button" class="ca-strike-btn" data-strike="${strikeIdx}" data-variant="${variantIdx}">${variant.label}</button>
+                    `).join('')}
                 </div>
-            </form>
-            <p style="font-size: 0.9em; color: #555;"><em>This will roll your attack. If it hits, it will automatically trigger your Recall Knowledge check.</em></p>
-        `,
-        buttons: {
-            roll: {
-                icon: '<i class="fas fa-dice-d20"></i>',
-                label: "Strike!",
-                callback: async (html) => {
-                    const selectedIdx = parseInt(html.find("#strike-select").val());
-                    const chosenStrike = meleeStrikes[selectedIdx];
+            </div>
+        `;
+    });
 
-                    // Set up a one-time hook to catch the result of the strike we are about to roll
-                    const hookId = Hooks.on("createChatMessage", async (msg) => {
-                        // Ensure it's the attack roll from our actor
-                        if (msg.actor?.id !== actor.id) return;
-                        const context = msg.flags?.pf2e?.context;
-                        if (context?.type !== "attack-roll") return;
+    contentHtml += `
+            <p style="font-size: 0.85em; color: #555; margin-top: 10px; font-style: italic;">If your strike hits, Recall Knowledge will trigger automatically.</p>
+        </div>
+    `;
 
-                        // Clean up the hook immediately so it doesn't fire on future attacks
-                        Hooks.off("createChatMessage", hookId);
+    // Create the Dialog reference
+    let dialogRef = new Dialog({
+        title: "Combat Assessment",
+        content: contentHtml,
+        buttons: {}, // We remove standard buttons because our custom HTML buttons handle the actions
+        render: (html) => {
+            // Attach click listeners to all the dynamically generated MAP buttons
+            html.find(".ca-strike-btn").click(async (event) => {
+                const strikeIdx = event.currentTarget.dataset.strike;
+                const variantIdx = event.currentTarget.dataset.variant;
+                const chosenStrike = meleeStrikes[strikeIdx];
 
-                        const outcome = context.outcome;
-                        if (outcome === "success" || outcome === "criticalSuccess") {
-                            let bonus = 0;
-                            let bonusText = "";
+                // Close the dialog immediately upon selection
+                dialogRef.close();
 
-                            if (hasOA) {
-                                bonus = outcome === "criticalSuccess" ? 4 : 2;
-                                bonusText = `<br><span style="color:green; font-size:0.9em;"><strong>Observational Analysis:</strong> +${bonus} circumstance bonus applied to RK!</span>`;
-                            }
+                // Set up a one-time hook to catch the result of the strike we are about to roll
+                const hookId = Hooks.on("createChatMessage", async (msg) => {
+                    // Ensure it's the attack roll from our actor
+                    if (msg.actor?.id !== actor.id) return;
+                    const context = msg.flags?.pf2e?.context;
+                    if (context?.type !== "attack-roll") return;
 
-                            await ChatMessage.create({
-                                user: game.user.id,
-                                speaker: ChatMessage.getSpeaker({ token: token }),
-                                content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} hit ${target.name} and immediately attempts to Recall Knowledge.${bonusText}`
-                            });
+                    // Clean up the hook immediately so it doesn't fire on future attacks
+                    Hooks.off("createChatMessage", hookId);
 
-                            // Pass the calculated bonus directly into the RK dialog!
-                            if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog) {
-                                game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog(bonus);
-                            }
+                    const outcome = context.outcome;
+                    if (outcome === "success" || outcome === "criticalSuccess") {
+                        let bonus = 0;
+                        let bonusText = "";
 
-                        } else {
-                            await ChatMessage.create({
-                                user: game.user.id,
-                                speaker: ChatMessage.getSpeaker({ token: token }),
-                                content: `<strong>Combat Assessment Missed!</strong><br>${actor.name} failed to hit ${target.name}. No Recall Knowledge check is triggered.`
-                            });
+                        if (hasOA) {
+                            bonus = outcome === "criticalSuccess" ? 4 : 2;
+                            bonusText = `<br><span style="color:green; font-size:0.9em;"><strong>Observational Analysis:</strong> +${bonus} circumstance bonus applied to RK!</span>`;
                         }
-                    });
 
-                    // Fire the strike to trigger the hook above
-                    await chosenStrike.variants[0].roll();
+                        await ChatMessage.create({
+                            user: game.user.id,
+                            speaker: ChatMessage.getSpeaker({ token: token }),
+                            content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} hit ${target.name} and immediately attempts to Recall Knowledge.${bonusText}`
+                        });
 
-                    // Safety timeout: Remove the hook after 10 seconds just in case the roll is cancelled
-                    setTimeout(() => {
-                        Hooks.off("createChatMessage", hookId);
-                    }, 10000);
-                }
-            },
-            cancel: {
-                icon: '<i class="fas fa-times"></i>',
-                label: "Cancel"
-            }
-        },
-        default: "roll"
-    }).render(true);
+                        // Pass the calculated bonus directly into the RK dialog!
+                        if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog) {
+                            game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog(bonus);
+                        }
+
+                    } else {
+                        await ChatMessage.create({
+                            user: game.user.id,
+                            speaker: ChatMessage.getSpeaker({ token: token }),
+                            content: `<strong>Combat Assessment Missed!</strong><br>${actor.name} failed to hit ${target.name}. No Recall Knowledge check is triggered.`
+                        });
+                    }
+                });
+
+                // Fire the exact MAP variant strike chosen (passing the click event for blind/secret roll modifiers)
+                await chosenStrike.variants[variantIdx].roll({ event });
+
+                // Safety timeout: Remove the hook after 10 seconds just in case the roll is cancelled or fails
+                setTimeout(() => {
+                    Hooks.off("createChatMessage", hookId);
+                }, 10000);
+            });
+        }
+    });
+
+    // Render the dialog
+    dialogRef.render(true);
 }
