@@ -34,6 +34,12 @@ import {
     KNOWN_WEAKNESSES_MACRO_ICON,
 } from "./known-weaknesses.js";
 
+import {
+    executeCombatAssessment,
+    COMBAT_ASSESSMENT_MACRO_NAME,
+    COMBAT_ASSESSMENT_MACRO_ICON,
+} from "./combat-assessment.js";
+
 // --- THE DESIRED MACRO STATE ---
 // Add any new macros to this array. The Smart Sync will handle the rest!
 const DESIRED_MACROS = [
@@ -41,7 +47,8 @@ const DESIRED_MACROS = [
     { name: ENHANCED_RECALL_MACRO_NAME, icon: ENHANCED_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();` },
     { name: EXPLORATION_ACTIVITY_MACRO_NAME, icon: EXPLORATION_ACTIVITY_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.addExplorationActivity();` },
     { name: MONSTER_HUNTER_MACRO_NAME, icon: MONSTER_HUNTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMonsterHunter();` },
-    { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();` }
+    { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();` },
+    { name: COMBAT_ASSESSMENT_MACRO_NAME, icon: COMBAT_ASSESSMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeCombatAssessment();` }
 ];
 
 // Hook to handle the GM clicking the "Create Actor" button on the chat card
@@ -157,6 +164,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.addExplorationActivity = addExplorationActivity;
     game.pf2eAwesomePlayerMacros.executeMonsterHunter = executeMonsterHunter;
     game.pf2eAwesomePlayerMacros.executeKnownWeaknesses = executeKnownWeaknesses;
+    game.pf2eAwesomePlayerMacros.executeCombatAssessment = executeCombatAssessment;
 
     if (game.user.isGM) {
         const currentVersion = game.modules.get(MODULE_ID)?.version || "1.0.0";

@@ -392,11 +392,13 @@ function getBestLore(actor) {
     return best;
 }
 
-async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forcedD20 = null) {
+async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forcedD20 = null, circumstanceBonus = 0) {
     const skillInfo = getSkillInfo(actor, skillKey);
     const skillLabel = customLabel || (skillInfo?.label ?? skillKey);
-    const modifier = Number(skillInfo?.mod ?? skillInfo?.value ?? skillInfo?.totalModifier ?? skillInfo?.total ?? 0);
-    const safeModifier = Number.isFinite(modifier) ? modifier : 0;
+    const baseModifier = Number(skillInfo?.mod ?? skillInfo?.value ?? skillInfo?.totalModifier ?? skillInfo?.total ?? 0);
+
+    // Add the dynamic bonus directly to the final modifier
+    const safeModifier = (Number.isFinite(baseModifier) ? baseModifier : 0) + circumstanceBonus;
 
     let d20Result = forcedD20;
     let total = 0;
@@ -424,7 +426,7 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forced
     return { label: skillLabel, total: total, d20: d20Result, degree: degree, breakdown: breakdown };
 }
 
-async function performRecallKnowledge(html) {
+async function performRecallKnowledge(html, circumstanceBonus = 0) {
     const skillKey = html.find('[name="skill"]').val();
     const question = html.find('[name="question"]').val() || 'all';
     const otherText = html.find('[name="otherText"]').val() || '';
@@ -527,20 +529,22 @@ async function performRecallKnowledge(html) {
     };
 
     const rollPromises = targetActors.map(async (actor) => {
-        // Roll Primary Selected Skill
-        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc);
-        const primaryD20 = primaryRoll.d20; // Extract the raw d20 result
 
-        // Roll Related Skills secretly for the GM to reference using the SAME d20
+        // Pass circumstanceBonus into the Primary Roll
+        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc, null, null, circumstanceBonus);
+        const primaryD20 = primaryRoll.d20;
+
         const relatedRolls = [];
         const relatedKeys = relatedMap[skillKey] || [];
 
         for (const relKey of relatedKeys) {
             if (relKey === 'lore') {
                 const bestLore = getBestLore(actor);
-                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label, primaryD20));
+                // Pass circumstanceBonus into the Lore Roll
+                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label, primaryD20, circumstanceBonus));
             } else {
-                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc, null, primaryD20));
+                // Pass circumstanceBonus into the Related Rolls
+                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc, null, primaryD20, circumstanceBonus));
             }
         }
 
@@ -577,7 +581,7 @@ function getSuggestedSkill(actor) {
     return null;
 }
 
-export function openRecallKnowledgeDialog() {
+export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
     const targets = Array.from(game.user.targets ?? []);
 
     // Only fetch the single direct trait match for the dropdown
@@ -632,7 +636,7 @@ export function openRecallKnowledgeDialog() {
         title: isGM ? 'Recall Knowledge (GM Overview)' : 'Recall Knowledge Check',
         content: content,
         buttons: {
-            roll: { icon: '<i class="fas fa-brain"></i>', label: 'Secret Roll', callback: (html) => performRecallKnowledge(html) },
+            roll: { icon: '<i class="fas fa-brain"></i>', label: 'Secret Roll', callback: (html) => performRecallKnowledge(html, circumstanceBonus) },
             cancel: { icon: '<i class="fas fa-times"></i>', label: 'Cancel' }
         },
         default: 'roll',
