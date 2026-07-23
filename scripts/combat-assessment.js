@@ -1,6 +1,7 @@
 /**
  * PF2e Combat Assessment Macro
  * * Displays all melee strikes with dedicated, perfectly aligned buttons for their MAP variants.
+ * * Auto-targets the player's assigned character if no token is selected.
  * * Rolls the selected strike variant.
  * * Hooks into the chat message to read the attack's outcome.
  * * Waits 3 seconds for 3D dice animations to finish.
@@ -11,9 +12,19 @@ export const COMBAT_ASSESSMENT_MACRO_NAME = "Combat Assessment";
 export const COMBAT_ASSESSMENT_MACRO_ICON = "icons/skills/melee/strike-sword-blood-red.webp";
 
 export async function executeCombatAssessment() {
-    // Ensure exactly one token is selected
+    // Ensure a token/actor is selected, or default to the player's assigned character
+    let actor = null;
+    let token = null;
     const controlled = canvas?.tokens?.controlled ?? [];
-    if (controlled.length !== 1) {
+
+    if (controlled.length === 1) {
+        token = controlled[0];
+        actor = token.actor;
+    } else if (!game.user.isGM && game.user.character) {
+        actor = game.user.character;
+        // Grab the active token for this character on the current scene
+        token = actor.getActiveTokens()[0] ?? null;
+    } else {
         return ui.notifications.warn("Please select exactly one of your tokens.");
     }
 
@@ -23,8 +34,6 @@ export async function executeCombatAssessment() {
         return ui.notifications.warn("Please target exactly one enemy.");
     }
 
-    const token = controlled[0];
-    const actor = token.actor;
     const target = targets[0];
 
     // Check for the relevant feats
@@ -112,7 +121,7 @@ export async function executeCombatAssessment() {
 
                         await ChatMessage.create({
                             user: game.user.id,
-                            speaker: ChatMessage.getSpeaker({ token: token }),
+                            speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
                             content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} hit ${target.name} and immediately attempts to Recall Knowledge.${bonusText}`
                         });
 
@@ -124,7 +133,7 @@ export async function executeCombatAssessment() {
                     } else {
                         await ChatMessage.create({
                             user: game.user.id,
-                            speaker: ChatMessage.getSpeaker({ token: token }),
+                            speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
                             content: `<strong>Combat Assessment Missed!</strong><br>${actor.name} failed to hit ${target.name}. No Recall Knowledge check is triggered.`
                         });
                     }
