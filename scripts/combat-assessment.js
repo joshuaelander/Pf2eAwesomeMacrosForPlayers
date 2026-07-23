@@ -1,8 +1,9 @@
 /**
  * PF2e Combat Assessment Macro
- * * Displays all melee strikes with dedicated buttons for their MAP variants.
+ * * Displays all melee strikes with dedicated, perfectly aligned buttons for their MAP variants.
  * * Rolls the selected strike variant.
  * * Hooks into the chat message to read the attack's outcome.
+ * * Waits 3 seconds for 3D dice animations to finish.
  * * On a hit/crit, applies Observational Analysis bonuses (if applicable) and launches Enhanced RK.
  */
 
@@ -45,8 +46,8 @@ export async function executeCombatAssessment() {
         <style>
             .ca-strike-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 6px; background: rgba(0,0,0,0.05); border: 1px solid var(--color-border-light-2); border-radius: 4px; }
             .ca-strike-name { flex: 1; font-weight: bold; margin-right: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.05em; }
-            .ca-btn-group { display: flex; gap: 6px; }
-            .ca-strike-btn { padding: 6px 10px; line-height: 14px; cursor: pointer; border: 1px solid var(--color-border-dark-4); border-radius: 4px; background: rgba(255,255,255,0.7); min-width: 45px; font-weight: bold; }
+            .ca-btn-group { display: flex; gap: 6px; flex-shrink: 0; }
+            .ca-strike-btn { padding: 6px 0; line-height: 14px; cursor: pointer; border: 1px solid var(--color-border-dark-4); border-radius: 4px; background: rgba(255,255,255,0.7); width: 48px; text-align: center; font-weight: bold; }
             .ca-strike-btn:hover { background: rgba(0,0,0,0.1); }
         </style>
         <div style="font-family: 'Signika', sans-serif; margin-bottom: 5px;">
@@ -75,7 +76,7 @@ export async function executeCombatAssessment() {
     let dialogRef = new Dialog({
         title: "Combat Assessment",
         content: contentHtml,
-        buttons: {}, // We remove standard buttons because our custom HTML buttons handle the actions
+        buttons: {},
         render: (html) => {
             // Attach click listeners to all the dynamically generated MAP buttons
             html.find(".ca-strike-btn").click(async (event) => {
@@ -95,6 +96,9 @@ export async function executeCombatAssessment() {
 
                     // Clean up the hook immediately so it doesn't fire on future attacks
                     Hooks.off("createChatMessage", hookId);
+
+                    // Wait 3 seconds to let 3D dice animations finish before continuing
+                    await new Promise(resolve => setTimeout(resolve, 3000));
 
                     const outcome = context.outcome;
                     if (outcome === "success" || outcome === "criticalSuccess") {
