@@ -59,7 +59,6 @@ const DESIRED_MACROS = [
 
 // Hook to handle the "Create Actor" button on the chat card for players
 Hooks.on("renderChatMessage", (message, html, data) => {
-    // We removed the GM restriction here so players can click their own button
     handlePlayerCreateButton(message, html, data);
 });
 
@@ -197,20 +196,21 @@ Hooks.once('ready', async () => {
             return { success: true };
         });
 
-        // 2. Secure Player Actor Creation Socket
+        // 2. Player Actor Creation Socket
         playerModuleSocket.register("createRandomPCActor", async (userId, actorData) => {
-            if (!game.user.isGM) return { success: false }; // Ensure it strictly runs as GM
+            if (!game.user.isGM) return { success: false };
 
             const requestingUser = game.users.get(userId);
             if (!requestingUser) return { success: false, error: "Invalid user." };
 
-            // Spam Protection: Check if the player already created a character
-            // GMs bypass this restriction for testing
-            if (requestingUser.getFlag(MODULE_ID, "hasCreatedRandomActor") && !requestingUser.isGM) {
+            // Allow infinite characters, but limit creation to ONCE per rollId
+            const rollId = actorData.rollId;
+            let createdRolls = requestingUser.getFlag(MODULE_ID, "createdRolls") || [];
+
+            if (createdRolls.includes(rollId) && !requestingUser.isGM) {
                 return { success: false, error: "limit_reached" };
             }
 
-            // Construct Actor Data
             let systemData = {
                 details: { level: { value: actorData.level } }
             };
@@ -223,14 +223,7 @@ Hooks.once('ready', async () => {
                 }
             }
 
-            const items = [];
-            for (const uuid of (actorData.uuids || [])) {
-                if (!uuid) continue;
-                const item = await fromUuid(uuid);
-                if (item) items.push(item.toObject());
-            }
-
-            // Create Actor and grant the requesting user ownership
+            // Create the empty actor
             const newActor = await Actor.create({
                 name: actorData.name,
                 type: "character",
@@ -241,14 +234,12 @@ Hooks.once('ready', async () => {
                 }
             });
 
-            if (items.length > 0) {
-                await newActor.createEmbeddedDocuments("Item", items);
-            }
+            // Mark this specific roll as used
+            createdRolls.push(rollId);
+            await requestingUser.setFlag(MODULE_ID, "createdRolls", createdRolls);
 
-            // Lock the player out from making another one
-            await requestingUser.setFlag(MODULE_ID, "hasCreatedRandomActor", true);
-
-            // Return the newly created actor's ID to the player so their client can render it
+ 
+            // Send the ID back so the player's client can do it.
             return { success: true, actorId: newActor.id };
         });
 
@@ -264,8 +255,6 @@ Hooks.once('ready', async () => {
         } catch (error) {
             if (error.name === "SocketlibNoGMConnectedError") {
                 ui.notifications.error("A Game Master must be online to apply the immunity tracker.");
-            } else {
-                console.error(error);
             }
             return false;
         }
@@ -281,8 +270,6 @@ Hooks.once('ready', async () => {
         } catch (error) {
             if (error.name === "SocketlibNoGMConnectedError") {
                 ui.notifications.error("A Game Master must be online to generate your character sheet.");
-            } else {
-                console.error(error);
             }
             return { success: false, error: "no_gm" };
         }

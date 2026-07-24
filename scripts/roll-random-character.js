@@ -7,7 +7,8 @@
  * - Custom Stat Allocation algorithm scaling from Level 1 to 20.
  * - Accurately calculates PF2e 18+ stat costs.
  * - Uses Socketlib to securely allow players to create their own sheet.
- * - Enforces a strict one-character limit per player to prevent spam.
+ * - Allows multiple character creations, but prevents spam-clicking a single roll.
+ * - Routes Class/Ancestry selection dialogs properly to the player's screen.
  */
 
 export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
@@ -29,19 +30,19 @@ export function handlePlayerCreateButton(message, html, data) {
 
         // Package the data for Socketlib
         const actorData = {
-            uuids: dataset.uuids ? dataset.uuids.split(",") : [],
+            rollId: dataset.rollid,
             name: dataset.actorname || "Random Generated PC",
             level: parseInt(dataset.level) || 1,
             stats: dataset.stats ? JSON.parse(dataset.stats) : null
         };
 
-        // Fire request to the GM Client
+        // Fire request to the GM Client to build the empty shell
         const result = await game.pf2eAwesomePlayerMacros.createRandomActor(actorData);
 
         if (!result || !result.success) {
             if (result?.error === "limit_reached") {
-                ui.notifications.warn("You have already created your allowed Random PC!");
-                btn.text("Limit Reached");
+                ui.notifications.warn("This specific roll has already been created.");
+                btn.text("Completed");
             } else {
                 ui.notifications.error("Failed to create character. Is a GM currently logged in?");
                 btn.prop("disabled", false);
@@ -50,14 +51,33 @@ export function handlePlayerCreateButton(message, html, data) {
             return;
         }
 
-        ui.notifications.info(`Successfully created PC: ${actorData.name}`);
-        btn.text("Actor Created");
+        ui.notifications.info(`Successfully created PC shell. Applying classes and choices...`);
+        btn.text("Completed");
 
-        // Open the newly created and assigned character sheet for the player
-        const newActor = game.actors.get(result.actorId);
-        if (newActor) {
-            newActor.sheet.render(true);
-        }
+        // Wait 1 second to ensure the network has fully synced the player's new OWNER 
+        // permissions for this actor before attempting to add items to it.
+        setTimeout(async () => {
+            const newActor = game.actors.get(result.actorId);
+            if (newActor) {
+
+                // Fetch the items strictly on the player's client
+                const uuids = dataset.uuids ? dataset.uuids.split(",") : [];
+                const itemsToCreate = [];
+                for (const uuid of uuids) {
+                    if (!uuid) continue;
+                    const item = await fromUuid(uuid);
+                    if (item) itemsToCreate.push(item.toObject());
+                }
+
+                // Add the items. Because the player's client is executing this line,
+                // the PF2e system will correctly route all ChoiceSet dialogs to the player!
+                if (itemsToCreate.length > 0) {
+                    await newActor.createEmbeddedDocuments("Item", itemsToCreate);
+                }
+
+                newActor.sheet.render(true);
+            }
+        }, 1000);
     });
 }
 
@@ -76,7 +96,6 @@ export async function createCharacter() {
         await new Promise(r => setTimeout(r, 1000));
     };
 
-    // Suspense Tracker
     let isFirstRoll = true;
     const checkPrompt = async (message) => {
         if (isFirstRoll) {
@@ -174,7 +193,7 @@ export async function createCharacter() {
         if (!await checkPrompt("Next: Allocating Random Stats")) return;
 
         let basePoints = 9;
-        let statCap = 4; // Absolute max points you can put into a stat
+        let statCap = 4;
 
         if (options.level >= 20) {
             basePoints = 25;
@@ -378,18 +397,19 @@ async function postSummary(results) {
         speaker: ChatMessage.getSpeaker()
     });
 
+    // Generate a unique ID for this specific roll
+    const rollId = foundry.utils.randomID();
     const statsDataset = s.statsObj ? JSON.stringify(s.statsObj) : "";
 
     const userMessageContent = `
         ${summaryHtml}
         <hr>
-        <p>Click below to automatically create a character with these items applied.</p>
-        <button class="create-random-pc-btn" data-level="${s.level}" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}" data-stats='${statsDataset}'>
+        <p>Click below to automatically create a character with these settings applied.</p>
+        <button class="create-random-pc-btn" data-rollid="${rollId}" data-level="${s.level}" data-uuids="${results.uuids.join(',')}" data-actorname="${results.actorName}" data-stats='${statsDataset}'>
             <i class="fas fa-user-plus"></i> Create Level ${s.level} ${results.actorName}
         </button>
     `;
 
-    // Grab all GM user IDs and add the ID of the player who ran the macro
     const gmIds = ChatMessage.getWhisperRecipients("GM").map(u => u.id);
     const whisperRecipients = [...new Set([...gmIds, game.user.id])];
 
