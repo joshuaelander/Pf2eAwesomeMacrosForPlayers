@@ -3,7 +3,7 @@
  * * Auto-targets the player's assigned character if no token is selected.
  * * Prompts the player to confirm if they hit the target this turn for the +1 bonus.
  * * Launches Enhanced Recall Knowledge with the appropriate bonus.
- * * Creates a 1-day custom tracking effect on the Magus to remember the target's immunity.
+ * * Uses Socketlib to apply a generic 1-day immunity effect directly to the target.
  * * Posts a chat card announcing the Spellstrike recharge.
  */
 
@@ -32,22 +32,19 @@ export async function executeMagusAnalysis() {
         return ui.notifications.warn("Please target exactly one enemy.");
     }
 
-    const target = targets[0];
+    const targetToken = targets[0];
+    const targetActor = targetToken.actor;
+
+    if (!targetActor) {
+        return ui.notifications.error("Target has no valid actor.");
+    }
 
     // Check for the Magus's Analysis feat
     const hasFeat = actor.itemTypes.feat.some(f => f.slug === "maguss-analysis" || f.slug === "magus-analysis")
         || actor.items.some(i => i.slug === "maguss-analysis" || i.slug === "magus-analysis" || i.name.includes("Magus's Analysis"));
 
     if (!hasFeat) {
-        return ui.notifications.info(`${actor.name} does not appear to have Magus's Analysis.`);
-    }
-
-    // Prevent running it again if the immunity effect is already on the Magus
-    const immunityName = `Analysis Immunity: ${target.name}`;
-    const hasImmunity = actor.itemTypes.effect.some(e => e.name === immunityName);
-
-    if (hasImmunity) {
-        return ui.notifications.warn(`You have already used Magus's Analysis on ${target.name}. They are immune for 1 day.`);
+        ui.notifications.info(`${actor.name} does not appear to have Magus's Analysis, but proceeding anyway.`);
     }
 
     // --- 1. Find and Post Magus's Analysis Action to Chat ---
@@ -61,7 +58,7 @@ export async function executeMagusAnalysis() {
         await ChatMessage.create({
             user: game.user.id,
             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-            content: `<strong>${actor.name}</strong> uses Magus's Analysis against <strong>${target.name}</strong>!`
+            content: `<strong>${actor.name}</strong> uses Magus's Analysis against <strong>${targetToken.name}</strong>!`
         });
     }
 
@@ -70,7 +67,7 @@ export async function executeMagusAnalysis() {
         title: "Magus's Analysis",
         content: `
             <div style="font-family: 'Signika', sans-serif; margin-bottom: 10px;">
-                <p style="margin-top: 0;">Did you previously hit <strong>${target.name}</strong> with a Strike this turn?</p>
+                <p style="margin-top: 0;">Did you previously hit <strong>${targetToken.name}</strong> with a Strike this turn?</p>
                 <p style="font-size: 0.85em; color: #555; margin-bottom: 0;"><em>(If yes, you gain a +1 circumstance bonus to your Recall Knowledge check.)</em></p>
             </div>
         `,
@@ -79,14 +76,14 @@ export async function executeMagusAnalysis() {
                 icon: '<i class="fas fa-check"></i>',
                 label: "Yes (+1)",
                 callback: async () => {
-                    await finishMagusAnalysis(actor, target, token, 1, immunityName);
+                    await finishMagusAnalysis(actor, targetActor, targetToken, token, 1);
                 }
             },
             no: {
                 icon: '<i class="fas fa-times"></i>',
                 label: "No (+0)",
                 callback: async () => {
-                    await finishMagusAnalysis(actor, target, token, 0, immunityName);
+                    await finishMagusAnalysis(actor, targetActor, targetToken, token, 0);
                 }
             }
         },
@@ -97,27 +94,28 @@ export async function executeMagusAnalysis() {
 /**
  * Handles the final outputs after the user selects their bonus condition.
  */
-async function finishMagusAnalysis(actor, target, token, bonus, immunityName) {
-    // --- 3. Trigger Enhanced Recall Knowledge ---
+async function finishMagusAnalysis(actor, targetActor, targetToken, token, bonus) {
+    // --- 3. Apply Immunity to Target via Socketlib ---
+    if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.applyMagusImmunity) {
+        const result = await game.pf2eAwesomePlayerMacros.applyMagusImmunity(targetActor);
+        if (result === "already_immune") {
+            ui.notifications.warn(`${targetToken.name} is already immune to Magus's Analysis.`);
+            return;
+        } else if (!result || result.success === false) {
+            ui.notifications.error("Failed to apply immunity effect to the target.");
+            return;
+        }
+    } else {
+        ui.notifications.error("Socketlib handler for Magus immunity not registered.");
+        return;
+    }
+
+    // --- 4. Trigger Enhanced Recall Knowledge ---
     if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog) {
         game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog(bonus);
     } else {
         ui.notifications.error("Enhanced Recall Knowledge logic not found. Make sure the module is active.");
     }
-
-    // --- 4. Apply Immunity Tracker to the Magus ---
-    const immunityEffect = {
-        type: "effect",
-        name: immunityName,
-        img: MAGUS_ANALYSIS_MACRO_ICON,
-        system: {
-            level: { value: actor.system.details.level.value },
-            duration: { value: 1, unit: "days", expiry: "turn-start" },
-            description: { value: `<p>${target.name} is temporarily immune to your Magus's Analysis for 1 day.</p>` }
-        }
-    };
-
-    await actor.createEmbeddedDocuments("Item", [immunityEffect]);
 
     // --- 5. Post Recharge Reminder Card ---
     await ChatMessage.create({
@@ -131,7 +129,7 @@ async function finishMagusAnalysis(actor, target, token, bonus, immunityName) {
                 <div class="card-content">
                     <p><strong>${actor.name}</strong> instantly recharges their Spellstrike!</p>
                     <p style="font-size: 0.9em; border-left: 3px solid #18520b; padding-left: 5px; background: rgba(0,0,0,0.05);">
-                        <em><strong>Note:</strong> ${target.name} is now temporarily immune to Magus's Analysis for 1 day. A tracker has been added to your sheet.</em>
+                        <em><strong>Note:</strong> ${targetToken.name} is now temporarily immune to Magus's Analysis for 1 day.</em>
                     </p>
                 </div>
             </div>`

@@ -1,7 +1,7 @@
 {
   "id": "pf2e-awesome-macros-for-players",
   "title": "PF2e Awesome Macros for Players",
-  "version": "1.2.9",
+  "version": "1.3.0",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -9,9 +9,18 @@
   "url": "https://github.com/joshuaelander/Pf2eAwesomeMacrosForPlayers",
   "manifest": "https://raw.githubusercontent.com/joshuaelander/Pf2eAwesomeMacrosForPlayers/main/module.json",
   "download": "https://github.com/joshuaelander/Pf2eAwesomeMacrosForPlayers/archive/refs/heads/main.zip",
+  "socket": true,
   "esmodules": [
     "scripts/main.js"
   ],
+  "relationships": {
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module"
+      }
+    ]
+  },
   "authors": [
     {
       "name": "Aeneas"

@@ -47,7 +47,6 @@ import {
 } from "./magus-analysis.js";
 
 // --- THE DESIRED MACRO STATE ---
-// Add any new macros to this array. The Smart Sync will handle the rest!
 const DESIRED_MACROS = [
     { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();` },
     { name: ENHANCED_RECALL_MACRO_NAME, icon: ENHANCED_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();` },
@@ -60,7 +59,6 @@ const DESIRED_MACROS = [
 
 // Hook to handle the GM clicking the "Create Actor" button on the chat card
 Hooks.on("renderChatMessage", (message, html, data) => {
-    // Only execute if the current user is a GM
     if (!game.user.isGM) return;
 
     // Attach listeners to any GM "Create Actor" buttons in chat
@@ -103,8 +101,6 @@ async function syncMacros() {
     // Find all macros currently in the world that belong to this module
     const existingMacros = game.macros.filter(m => m.flags?.[MODULE_ID]?.isModuleMacro);
     const desiredNames = DESIRED_MACROS.map(m => m.name);
-
-    // Set ownership so players can actually use them
     const observerOwnership = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
 
     // 1. Delete Obsolete Macros (Exists in world, but no longer in DESIRED_MACROS)
@@ -157,8 +153,10 @@ async function syncMacros() {
     }
 }
 
-// --- INITIALIZATION --- //
+// Global variable for our socket
+let playerModuleSocket;
 
+// --- MAIN INITIALIZATION --- //
 Hooks.once('ready', async () => {
     if (game.system.id !== "pf2e") return;
 
@@ -173,6 +171,49 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeKnownWeaknesses = executeKnownWeaknesses;
     game.pf2eAwesomePlayerMacros.executeCombatAssessment = executeCombatAssessment;
     game.pf2eAwesomePlayerMacros.executeMagusAnalysis = executeMagusAnalysis;
+
+    // --- BULLETPROOF SOCKETLIB SETUP --- //
+    // Moving this into the 'ready' hook guarantees Socketlib is fully awake before we talk to it.
+    if (game.modules.get("socketlib")?.active) {
+        playerModuleSocket = socketlib.registerModule(MODULE_ID);
+
+        // Register a GM-only function to apply the immunity effect to the target actor
+        playerModuleSocket.register("applyMagusImmunity", async (targetActorUuid) => {
+            if (!game.user.isGM) return { success: false };
+
+            const targetActor = await fromUuid(targetActorUuid);
+            if (!targetActor) return { success: false };
+
+            const effectName = "Magus's Analysis Immunity";
+            const hasImmunity = targetActor.itemTypes.effect.some(e => e.name === effectName);
+            if (hasImmunity) return "already_immune";
+
+            const effectData = {
+                type: "effect",
+                name: effectName,
+                img: "icons/magic/symbols/cog-shield-white-blue.webp",
+                system: {
+                    level: { value: targetActor.system.details?.level?.value || 1 },
+                    duration: { value: 1, unit: "days", expiry: "turn-start" },
+                    description: { value: `<p>This creature is temporarily immune to Magus's Analysis.</p>` }
+                }
+            };
+
+            await targetActor.createEmbeddedDocuments("Item", [effectData]);
+            return { success: true };
+        });
+    } else {
+        console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
+    }
+
+    // Expose the socketlib helper function on your global namespace
+    game.pf2eAwesomePlayerMacros.applyMagusImmunity = async (targetActor) => {
+        if (!playerModuleSocket) {
+            ui.notifications.error("Socketlib module socket not initialized. Please ensure the Socketlib module is active in your world.");
+            return false;
+        }
+        return await playerModuleSocket.executeAsGM("applyMagusImmunity", targetActor.uuid);
+    };
 
     if (game.user.isGM) {
         const currentVersion = game.modules.get(MODULE_ID)?.version || "1.0.0";
