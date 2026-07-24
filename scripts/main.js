@@ -4,7 +4,7 @@ const MACRO_FOLDER_NAME = "PF2e Awesome Macros For Players";
 const MACRO_FOLDER_COLOR = "#990000";
 
 import {
-    handleGMCreateButton,
+    handlePlayerCreateButton,
     createCharacter,
     ROLL_RANDOM_CHARACTER_MACRO_NAME,
     ROLL_RANDOM_CHARACTER_MACRO_ICON,
@@ -57,12 +57,10 @@ const DESIRED_MACROS = [
     { name: MAGUS_ANALYSIS_MACRO_NAME, icon: MAGUS_ANALYSIS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMagusAnalysis();` }
 ];
 
-// Hook to handle the GM clicking the "Create Actor" button on the chat card
+// Hook to handle the "Create Actor" button on the chat card for players
 Hooks.on("renderChatMessage", (message, html, data) => {
-    if (!game.user.isGM) return;
-
-    // Attach listeners to any GM "Create Actor" buttons in chat
-    handleGMCreateButton(message, html, data);
+    // We removed the GM restriction here so players can click their own button
+    handlePlayerCreateButton(message, html, data);
 });
 
 // --- HELPER FUNCTIONS --- //
@@ -98,19 +96,16 @@ async function syncMacros() {
     const folder = await getOrCreateFolder(MACRO_FOLDER_NAME, 'Macro');
     if (!folder) return;
 
-    // Find all macros currently in the world that belong to this module
     const existingMacros = game.macros.filter(m => m.flags?.[MODULE_ID]?.isModuleMacro);
     const desiredNames = DESIRED_MACROS.map(m => m.name);
     const observerOwnership = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
 
-    // 1. Delete Obsolete Macros (Exists in world, but no longer in DESIRED_MACROS)
     const obsoleteIds = existingMacros.filter(m => !desiredNames.includes(m.name)).map(m => m.id);
     if (obsoleteIds.length > 0) {
         await Macro.deleteDocuments(obsoleteIds);
         console.log(`PF2e Awesome Macros For Players | Deleted ${obsoleteIds.length} obsolete macros.`);
     }
 
-    // 2. Create or Update Macros
     let createdCount = 0;
     let updatedCount = 0;
 
@@ -172,12 +167,11 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeCombatAssessment = executeCombatAssessment;
     game.pf2eAwesomePlayerMacros.executeMagusAnalysis = executeMagusAnalysis;
 
-    // --- BULLETPROOF SOCKETLIB SETUP --- //
-    // Moving this into the 'ready' hook guarantees Socketlib is fully awake before we talk to it.
+    // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
         playerModuleSocket = socketlib.registerModule(MODULE_ID);
 
-        // Register a GM-only function to apply the immunity effect to the target actor
+        // 1. Magus Analysis Socket
         playerModuleSocket.register("applyMagusImmunity", async (targetActorUuid) => {
             if (!game.user.isGM) return { success: false };
 
@@ -202,17 +196,96 @@ Hooks.once('ready', async () => {
             await targetActor.createEmbeddedDocuments("Item", [effectData]);
             return { success: true };
         });
+
+        // 2. Secure Player Actor Creation Socket
+        playerModuleSocket.register("createRandomPCActor", async (userId, actorData) => {
+            if (!game.user.isGM) return { success: false }; // Ensure it strictly runs as GM
+
+            const requestingUser = game.users.get(userId);
+            if (!requestingUser) return { success: false, error: "Invalid user." };
+
+            // Spam Protection: Check if the player already created a character
+            // GMs bypass this restriction for testing
+            if (requestingUser.getFlag(MODULE_ID, "hasCreatedRandomActor") && !requestingUser.isGM) {
+                return { success: false, error: "limit_reached" };
+            }
+
+            // Construct Actor Data
+            let systemData = {
+                details: { level: { value: actorData.level } }
+            };
+
+            if (actorData.stats) {
+                systemData.build = { attributes: { manual: true } };
+                systemData.abilities = {};
+                for (const [key, val] of Object.entries(actorData.stats)) {
+                    systemData.abilities[key] = { mod: val };
+                }
+            }
+
+            const items = [];
+            for (const uuid of (actorData.uuids || [])) {
+                if (!uuid) continue;
+                const item = await fromUuid(uuid);
+                if (item) items.push(item.toObject());
+            }
+
+            // Create Actor and grant the requesting user ownership
+            const newActor = await Actor.create({
+                name: actorData.name,
+                type: "character",
+                system: systemData,
+                ownership: {
+                    default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE,
+                    [userId]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
+                }
+            });
+
+            if (items.length > 0) {
+                await newActor.createEmbeddedDocuments("Item", items);
+            }
+
+            // Lock the player out from making another one
+            await requestingUser.setFlag(MODULE_ID, "hasCreatedRandomActor", true);
+
+            // Return the newly created actor's ID to the player so their client can render it
+            return { success: true, actorId: newActor.id };
+        });
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
 
-    // Expose the socketlib helper function on your global namespace
+    // Expose the Socketlib helper functions on your global namespace
     game.pf2eAwesomePlayerMacros.applyMagusImmunity = async (targetActor) => {
-        if (!playerModuleSocket) {
-            ui.notifications.error("Socketlib module socket not initialized. Please ensure the Socketlib module is active in your world.");
+        if (!playerModuleSocket) return false;
+        try {
+            return await playerModuleSocket.executeAsGM("applyMagusImmunity", targetActor.uuid);
+        } catch (error) {
+            if (error.name === "SocketlibNoGMConnectedError") {
+                ui.notifications.error("A Game Master must be online to apply the immunity tracker.");
+            } else {
+                console.error(error);
+            }
             return false;
         }
-        return await playerModuleSocket.executeAsGM("applyMagusImmunity", targetActor.uuid);
+    };
+
+    game.pf2eAwesomePlayerMacros.createRandomActor = async (actorData) => {
+        if (!playerModuleSocket) {
+            ui.notifications.error("Socketlib module not initialized. Ensure the Socketlib module is active.");
+            return { success: false };
+        }
+        try {
+            return await playerModuleSocket.executeAsGM("createRandomPCActor", game.user.id, actorData);
+        } catch (error) {
+            if (error.name === "SocketlibNoGMConnectedError") {
+                ui.notifications.error("A Game Master must be online to generate your character sheet.");
+            } else {
+                console.error(error);
+            }
+            return { success: false, error: "no_gm" };
+        }
     };
 
     if (game.user.isGM) {
@@ -224,7 +297,6 @@ Hooks.once('ready', async () => {
         if (currentVersion !== storedVersion) {
             await syncMacros();
 
-            // Re-fetch the folder just in case it was created during the sync
             folder = game.folders.getName(MACRO_FOLDER_NAME);
             if (folder) {
                 await folder.setFlag(MODULE_ID, "moduleVersion", currentVersion);

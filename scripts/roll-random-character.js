@@ -5,66 +5,59 @@
  * - Rolls random Ancestry, Heritage, Class, Background, and Stats.
  * - Triggers standard 3D dice using a 1d100 percentage trick for compendiums.
  * - Custom Stat Allocation algorithm scaling from Level 1 to 20.
- * - Accurately calculates PF2e 18+ stat costs (requires 2 points per +1 mod past 4).
- * - Suspenseful pop-up dialogs between rolls to build anticipation.
- * - Applies generated stats via manual override directly to the created Actor.
- * - Properly triggers PF2e ChoiceSet dialogs and sets level upon Actor creation.
+ * - Accurately calculates PF2e 18+ stat costs.
+ * - Uses Socketlib to securely allow players to create their own sheet.
+ * - Enforces a strict one-character limit per player to prevent spam.
  */
 
 export const ROLL_RANDOM_CHARACTER_MACRO_NAME = "Roll for Random Character";
 export const ROLL_RANDOM_CHARACTER_MACRO_ICON = "icons/sundries/gaming/dice-runed-brown.webp";
 
-export function handleGMCreateButton(message, html, data) {
-    if (!game.user.isGM) return;
-
+export function handlePlayerCreateButton(message, html, data) {
     const btn = html.find(".create-random-pc-btn");
     if (!btn.length) return;
 
     btn.on("click", async (e) => {
         e.preventDefault();
+
+        // Prevent double clicking
+        if (btn.prop("disabled")) return;
         btn.prop("disabled", true);
-        btn.text("Creating...");
+        btn.text("Requesting Sheet...");
 
         const dataset = e.currentTarget.dataset;
-        const uuids = dataset.uuids.split(",");
-        const actorName = dataset.actorname || "Random Generated PC";
-        const actorLevel = parseInt(dataset.level) || 1;
 
-        let systemData = {
-            details: { level: { value: actorLevel } }
+        // Package the data for Socketlib
+        const actorData = {
+            uuids: dataset.uuids ? dataset.uuids.split(",") : [],
+            name: dataset.actorname || "Random Generated PC",
+            level: parseInt(dataset.level) || 1,
+            stats: dataset.stats ? JSON.parse(dataset.stats) : null
         };
 
-        if (dataset.stats) {
-            const stats = JSON.parse(dataset.stats);
-            systemData.build = { attributes: { manual: true } };
-            systemData.abilities = {};
-            // dataset.stats holds the final calculated MODIFIERS, not the raw points
-            for (const [key, val] of Object.entries(stats)) {
-                systemData.abilities[key] = { mod: val };
+        // Fire request to the GM Client
+        const result = await game.pf2eAwesomePlayerMacros.createRandomActor(actorData);
+
+        if (!result || !result.success) {
+            if (result?.error === "limit_reached") {
+                ui.notifications.warn("You have already created your allowed Random PC!");
+                btn.text("Limit Reached");
+            } else {
+                ui.notifications.error("Failed to create character. Is a GM currently logged in?");
+                btn.prop("disabled", false);
+                btn.text("Try Again");
             }
+            return;
         }
 
-        const items = [];
-        for (const uuid of uuids) {
-            if (!uuid) continue;
-            const item = await fromUuid(uuid);
-            if (item) items.push(item.toObject());
-        }
-
-        const newActor = await Actor.create({
-            name: actorName,
-            type: "character",
-            system: systemData
-        });
-
-        newActor.sheet.render(true);
-
-        if (items.length > 0) {
-            await newActor.createEmbeddedDocuments("Item", items);
-        }
-
-        ui.notifications.info(`Successfully created PC: ${newActor.name}`);
+        ui.notifications.info(`Successfully created PC: ${actorData.name}`);
         btn.text("Actor Created");
+
+        // Open the newly created and assigned character sheet for the player
+        const newActor = game.actors.get(result.actorId);
+        if (newActor) {
+            newActor.sheet.render(true);
+        }
     });
 }
 
@@ -201,7 +194,6 @@ export async function createCharacter() {
         const statsPoints = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
         const statKeys = Object.keys(statsPoints);
 
-        // Shuffle stat array
         for (let i = statKeys.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [statKeys[i], statKeys[j]] = [statKeys[j], statKeys[i]];
@@ -213,7 +205,6 @@ export async function createCharacter() {
         });
         await new Promise(res => setTimeout(res, 1000));
 
-        // Allocate raw points
         while (pointsLeft > 0) {
             for (const key of statKeys) {
                 if (pointsLeft <= 0) break;
@@ -236,17 +227,14 @@ export async function createCharacter() {
             }
         }
 
-        // Convert raw points into final PF2e Modifiers
         const statsMods = {};
         for (const key of statKeys) {
             const pts = statsPoints[key];
-            // PF2e Rule: Modifiers over +4 take 2 points to increase by 1
             statsMods[key] = pts <= 4 ? pts : 4 + Math.floor((pts - 4) / 2);
         }
 
-        results.summary.statsObj = statsMods; // Pass actual modifiers to the actor creation
+        results.summary.statsObj = statsMods;
 
-        // Create formatting string showing BOTH modifier and points spent to avoid confusion
         const formatStat = (key) => `${statsMods[key]} <span style="font-size: 0.8em; color: gray;">(${statsPoints[key]}pts)</span>`;
         results.summary.stats = `<br>STR: ${formatStat('str')}<br>DEX: ${formatStat('dex')}<br>CON: ${formatStat('con')}<br>INT: ${formatStat('int')}<br>WIS: ${formatStat('wis')}<br>CHA: ${formatStat('cha')}`;
 
@@ -392,7 +380,7 @@ async function postSummary(results) {
 
     const statsDataset = s.statsObj ? JSON.stringify(s.statsObj) : "";
 
-    const gmMessageContent = `
+    const userMessageContent = `
         ${summaryHtml}
         <hr>
         <p>Click below to automatically create a character with these items applied.</p>
@@ -401,8 +389,12 @@ async function postSummary(results) {
         </button>
     `;
 
+    // Grab all GM user IDs and add the ID of the player who ran the macro
+    const gmIds = ChatMessage.getWhisperRecipients("GM").map(u => u.id);
+    const whisperRecipients = [...new Set([...gmIds, game.user.id])];
+
     await ChatMessage.create({
-        content: gmMessageContent,
-        whisper: ChatMessage.getWhisperRecipients("GM")
+        content: userMessageContent,
+        whisper: whisperRecipients
     });
 }

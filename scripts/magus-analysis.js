@@ -44,7 +44,7 @@ export async function executeMagusAnalysis() {
         || actor.items.some(i => i.slug === "maguss-analysis" || i.slug === "magus-analysis" || i.name.includes("Magus's Analysis"));
 
     if (!hasFeat) {
-        ui.notifications.info(`${actor.name} does not appear to have Magus's Analysis, but proceeding anyway.`);
+        return ui.notifications.info(`${actor.name} does not appear to have Magus's Analysis.`);
     }
 
     // --- 1. Find and Post Magus's Analysis Action to Chat ---
@@ -58,7 +58,7 @@ export async function executeMagusAnalysis() {
         await ChatMessage.create({
             user: game.user.id,
             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-            content: `<strong>${actor.name}</strong> uses Magus's Analysis against <strong>${targetToken.name}</strong>!`
+            content: `<strong>${actor.name}</strong> uses Magus's Analysis against the target!`
         });
     }
 
@@ -67,7 +67,7 @@ export async function executeMagusAnalysis() {
         title: "Magus's Analysis",
         content: `
             <div style="font-family: 'Signika', sans-serif; margin-bottom: 10px;">
-                <p style="margin-top: 0;">Did you previously hit <strong>${targetToken.name}</strong> with a Strike this turn?</p>
+                <p style="margin-top: 0;">Did you previously hit this target with a Strike this turn?</p>
                 <p style="font-size: 0.85em; color: #555; margin-bottom: 0;"><em>(If yes, you gain a +1 circumstance bonus to your Recall Knowledge check.)</em></p>
             </div>
         `,
