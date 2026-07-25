@@ -7,6 +7,9 @@
  * - GM view retrieves all information at once, plus rolls for related skills.
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
  * - Shares the primary d20 roll across all related skill checks.
+ * - Dynamically detects Special Lores (Esoteric, Loremaster, Bardic) and auto-rolls them.
+ * - Smart Suggestions: Auto-recommends Universal Lores if their modifier beats the base skill.
+ * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
  * - Player blind roll (All skills) if clicked with no target.
  * - Displays the Truth alongside Dubious Knowledge on failures.
  */
@@ -27,7 +30,7 @@ function escapeHtml(unsafe) {
 }
 
 function calculateDegreeOfSuccess(total, dc, d20) {
-    if (dc === null) return 'Unknown'; // For targetless GM rolls
+    if (dc === null) return 'Unknown';
 
     const difference = total - dc;
     let degreeValue = 0;
@@ -71,7 +74,6 @@ async function analyzeCreature(targetActor) {
     const resistances = attrs.resistances || [];
     const immunities = attrs.immunities || [];
 
-    // Extract Saves
     const saves = targetActor.system?.saves || {};
     const saveMap = [
         { name: 'Fortitude', value: saves.fortitude?.value || 0 },
@@ -81,7 +83,6 @@ async function analyzeCreature(targetActor) {
     const highestSave = saveMap[0]?.name || 'Unknown';
     const lowestSave = saveMap[2]?.name || 'Unknown';
 
-    // Extract Abilities & Attacks (Filter out spells)
     const items = targetActor.items || [];
     const hasSpells = items.some(i => i.type === 'spell' || i.type === 'spellcastingEntry');
     const abilities = items.filter(i => i.type === 'action').map(i => i.name).filter(n => n && n.length > 2);
@@ -353,7 +354,6 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
 
     const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`) : `Unknown DC`;
 
-    // Stacked title formatting
     const title = creatureName
         ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>(${dcText})${qTitle}`
         : `Recall Knowledge<br>(${dcText})${qTitle}`;
@@ -375,13 +375,44 @@ function getSkillInfo(actor, skillKey) {
     return null;
 }
 
-function getBestLore(actor) {
+function getSpecialLores(actor) {
+    const specialLores = [];
+    if (!actor) return specialLores;
+
+    const systemData = actor.system ?? actor.data?.system ?? {};
+    const skills = systemData.skills ?? {};
+
+    for (const [key, skill] of Object.entries(skills)) {
+        const label = (skill.label || "").toLowerCase();
+        if (label === "bardic" || label === "loremaster" || label === "esoteric" || label === "bardic lore" || label === "loremaster lore" || label === "esoteric lore") {
+
+            let isEsoteric = (label === "esoteric" || label === "esoteric lore");
+            let hasDiverse = false;
+
+            if (isEsoteric) {
+                hasDiverse = actor.items?.some(i => i.type === "feat" && (i.system?.slug === "diverse-lore" || i.slug === "diverse-lore")) || false;
+            }
+
+            specialLores.push({
+                key: key,
+                label: skill.label,
+                isEsoteric: isEsoteric,
+                hasDiverse: hasDiverse
+            });
+        }
+    }
+    return specialLores;
+}
+
+function getBestLore(actor, excludeKeys = []) {
     const systemData = actor.system ?? actor.data?.system ?? {};
     const skills = systemData.skills ?? {};
     let best = null;
     let maxMod = -Infinity;
     for (const [key, skill] of Object.entries(skills)) {
         if (skill.lore || key.toLowerCase().includes('lore')) {
+            if (excludeKeys.includes(key)) continue;
+
             const mod = Number(skill.mod ?? skill.value ?? skill.totalModifier ?? skill.total ?? 0);
             if (mod > maxMod) {
                 maxMod = mod;
@@ -397,7 +428,6 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forced
     const skillLabel = customLabel || (skillInfo?.label ?? skillKey);
     const baseModifier = Number(skillInfo?.mod ?? skillInfo?.value ?? skillInfo?.totalModifier ?? skillInfo?.total ?? 0);
 
-    // Add the dynamic bonus directly to the final modifier
     const safeModifier = (Number.isFinite(baseModifier) ? baseModifier : 0) + circumstanceBonus;
 
     let d20Result = forcedD20;
@@ -438,7 +468,6 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     const creatureName = hasTarget ? (targets[0]?.name ?? targets[0]?.actor?.name ?? 'Unknown Creature') : null;
     const creatureAnalysis = hasTarget ? await analyzeCreature(targets[0]?.actor) : null;
 
-    // Determine target actors (Auto-select PC if player forgot, or whole party if GM has no tokens)
     const controlled = canvas?.tokens?.controlled ?? [];
     const isPCSelected = controlled.length > 0;
     let targetActors = [];
@@ -450,9 +479,9 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         }
     } else {
         if (!game.user.isGM && game.user.character) {
-            targetActors = [game.user.character]; // Auto-select assigned character for players
+            targetActors = [game.user.character];
         } else if (game.actors.party) {
-            targetActors = Array.from(game.actors.party.members); // GM default to Party
+            targetActors = Array.from(game.actors.party.members);
         } else {
             targetActors = game.actors.filter(a => a.type === 'character' && (a.system?.details?.alliance === 'party' || a.alliance === 'party'));
             if (targetActors.length === 0) targetActors = game.actors.filter(a => a.type === 'character' && a.hasPlayerOwner);
@@ -468,6 +497,9 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     if (!hasTarget && !game.user.isGM) {
         const actor = targetActors[0];
 
+        const specialLores = getSpecialLores(actor);
+        const specialLoreKeys = specialLores.map(sl => sl.key);
+
         let roll;
         try { roll = await new Roll(`1d20`).evaluate(); }
         catch (err) { ui.notifications.error("Roll error."); return; }
@@ -475,12 +507,26 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
 
         const skillPromises = Object.keys(SKILL_DICTIONARY).map(async key => {
             if (key === 'lore') {
-                const best = getBestLore(actor);
+                const best = getBestLore(actor, specialLoreKeys);
                 if (!best) return null;
-                return await evaluateSkillRoll(actor, best.key, null, best.label, d20);
+                return await evaluateSkillRoll(actor, best.key, null, best.label, d20, circumstanceBonus);
             }
-            return await evaluateSkillRoll(actor, key, null, null, d20);
+            return await evaluateSkillRoll(actor, key, null, null, d20, circumstanceBonus);
         });
+
+        // Auto-inject Special Lores into the Blind Roll
+        for (const sLore of specialLores) {
+            let penalty = 0;
+            let label = sLore.label;
+
+            // Apply the RAW Diverse Lore penalty strictly on generic (untargeted) topic rolls
+            if (sLore.isEsoteric && sLore.hasDiverse) {
+                penalty = -2;
+                label += " (Diverse -2)";
+            }
+            skillPromises.push(evaluateSkillRoll(actor, sLore.key, null, label, d20, circumstanceBonus + penalty));
+        }
+
         const allSkills = (await Promise.all(skillPromises)).filter(x => x);
 
         let blindHtml = `<div style="padding:6px; font-family: 'Signika', sans-serif;">
@@ -501,11 +547,10 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
 
         await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: blindHtml, whisper: gmIds, blind: true });
-        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: actor }), content: `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content"><p><b>${escapeHtml(actor.name)}</b> tries to recall information about something...</p></div></div>` });
+        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: actor }), content: `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content"><p><b>${escapeHtml(actor.name)}</b> tries to recall information about a general topic...</p></div></div>` });
         return;
     }
 
-    // Determine the formatted label for the target's suggested skill to pass to the chat card
     let suggestedSkillLabel = null;
     if (hasTarget) {
         const sKey = getSuggestedSkill(targets[0].actor);
@@ -529,9 +574,19 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     };
 
     const rollPromises = targetActors.map(async (actor) => {
+        const specialLores = getSpecialLores(actor);
+        const specialLoreKeys = specialLores.map(sl => sl.key);
 
-        // Pass circumstanceBonus into the Primary Roll
-        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc, null, null, circumstanceBonus);
+        let primaryPenalty = 0;
+        let primaryLabel = null;
+
+        const primaryLore = specialLores.find(sl => sl.key === skillKey);
+        if (primaryLore && primaryLore.isEsoteric && primaryLore.hasDiverse && !hasTarget) {
+            primaryPenalty = -2;
+            primaryLabel = primaryLore.label + " (Diverse -2)";
+        }
+
+        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc, primaryLabel, null, circumstanceBonus + primaryPenalty);
         const primaryD20 = primaryRoll.d20;
 
         const relatedRolls = [];
@@ -539,13 +594,26 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
 
         for (const relKey of relatedKeys) {
             if (relKey === 'lore') {
-                const bestLore = getBestLore(actor);
-                // Pass circumstanceBonus into the Lore Roll
+                const bestLore = getBestLore(actor, specialLoreKeys);
                 if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label, primaryD20, circumstanceBonus));
             } else {
-                // Pass circumstanceBonus into the Related Rolls
                 relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc, null, primaryD20, circumstanceBonus));
             }
+        }
+
+        // Auto-inject Special Lores into the Related Rolls
+        for (const sLore of specialLores) {
+            if (sLore.key === skillKey) continue;
+
+            let penalty = 0;
+            let label = sLore.label;
+
+            if (sLore.isEsoteric && sLore.hasDiverse && !hasTarget) {
+                penalty = -2;
+                label += " (Diverse -2)";
+            }
+
+            relatedRolls.push(await evaluateSkillRoll(actor, sLore.key, dc, label, primaryD20, circumstanceBonus + penalty));
         }
 
         return { actorId: actor.id, actorName: actor.name, primary: primaryRoll, related: relatedRolls };
@@ -582,13 +650,52 @@ function getSuggestedSkill(actor) {
 }
 
 export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
+
+    const controlled = canvas?.tokens?.controlled ?? [];
+    let roller = null;
+    if (controlled.length > 0) roller = controlled[0].actor;
+    else if (!game.user.isGM && game.user.character) roller = game.user.character;
+
+    const dynamicSkills = { ...SKILL_DICTIONARY };
+    let specialLores = [];
     const targets = Array.from(game.user.targets ?? []);
 
-    // Only fetch the single direct trait match for the dropdown
+    if (roller) {
+        specialLores = getSpecialLores(roller);
+        for (const sl of specialLores) {
+            let lbl = sl.label;
+            if (sl.isEsoteric && sl.hasDiverse && !targets.length) lbl += " (Diverse)";
+            dynamicSkills[sl.key] = lbl;
+        }
+    }
+
     let suggestedSkill = targets.length > 0 ? getSuggestedSkill(targets[0]?.actor) : null;
 
+    // --- SMART SUGGESTION OVERRIDE --- 
+    // Compares the base suggested skill modifier against the Special Lore modifiers. 
+    // If a Special Lore is mathematically superior, it overrides the dropdown suggestion.
+    if (suggestedSkill && roller) {
+        const baseSkillInfo = getSkillInfo(roller, suggestedSkill);
+        // Fallback to -99 if the base skill is completely untrained
+        const baseMod = Number(baseSkillInfo?.mod ?? baseSkillInfo?.value ?? baseSkillInfo?.totalModifier ?? baseSkillInfo?.total ?? -99);
+
+        let bestMod = baseMod;
+        let bestSkill = suggestedSkill;
+
+        for (const sl of specialLores) {
+            const slInfo = getSkillInfo(roller, sl.key);
+            const slMod = Number(slInfo?.mod ?? slInfo?.value ?? slInfo?.totalModifier ?? slInfo?.total ?? -99);
+
+            if (slMod > bestMod) {
+                bestMod = slMod;
+                bestSkill = sl.key;
+            }
+        }
+        suggestedSkill = bestSkill;
+    }
+
     let skillOptions = '';
-    for (let [key, label] of Object.entries(SKILL_DICTIONARY)) {
+    for (let [key, label] of Object.entries(dynamicSkills)) {
         const isSuggested = (key === suggestedSkill);
         skillOptions += `<option value="${escapeHtml(key)}" ${isSuggested ? 'selected' : ''}>${escapeHtml(label)}${isSuggested ? ' (Suggested)' : ''}</option>`;
     }
@@ -596,7 +703,6 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
     const hasTarget = (targets.length > 0);
     const isGM = game.user.isGM;
 
-    // Adjusted warning string to reflect the new No Target behavior
     const targetWarning = hasTarget
         ? `<p style="color: green;"><em><i class="fas fa-bullseye"></i> Target detected. DC and traits will be calculated secretly.</em></p>`
         : (isGM
