@@ -2,8 +2,9 @@
 Overview: A repo with more useful macros, this time for players to use!
 
 Contents: \
-1.) Macro for rolling recall knowledge, asking which skill to use and what question you want to ask. 
-It will then roll the skill and give the result to the GM. It will also give helpful hints to the GM to answer better.
+1.) Enhanced Recall Knowledge Macro for rolling recall knowledge, asking which skill to use and what question you want to ask. 
+It will then roll the skill and give the result to the GM. It will also give helpful hints to the GM to answer better. 
+Also , if you have any special lores, it will suggest the best one to use based on your current skill modifiers.
 
 2.) Macro for rolling a random new character with various options to enable/disable. 
 (Example: You can choose to roll a random character with or without a class, with or without a background, etc.)
@@ -11,6 +12,12 @@ It will then roll the skill and give the result to the GM. It will also give hel
 3.) Easy exploration for updating or mass updating people exploration activities. Easy to stop and start any activity. 
 
 4.) Monster Hunter for ranger to "Hunt Prey" and call the enhanced recall knowledge macro.
+
+5.) Magus Analysis for magus to recover their Spellstrike call the enhanced recall knowledge macro.
+
+6.) Known Weaknesses for investigator to call the enhanced recall knowledge macro when using devise-a-stratagem.
+
+7.) Combat assessment macro to do a strike and then call the enhanced recall knowledge macro to assess the target on a hit.
 
 If you'd like you can help support me over on Patreon to see this and many other fun tools, maps, etc related to PF2e. Linked here: https://patreon.com/AeneasPF2e
 
