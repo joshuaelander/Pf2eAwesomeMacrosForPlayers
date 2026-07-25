@@ -3,7 +3,7 @@
  * 
  * Features:
  * - Rolls for selected tokens or the whole party.
- * - Player view asks for specific questions (Weaknesses, Saves, etc.).
+ * - Player view asks for specific questions (Weaknesses, Saves, etc.) only when targeting.
  * - GM view retrieves all information at once, plus rolls for related skills.
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
  * - Shares the primary d20 roll across all related skill checks.
@@ -11,7 +11,7 @@
  * - Auto-Injects all specific player lores (Undead, Scouting, etc.) into the dropdown.
  * - Smart Suggestions: Auto-recommends Universal Lores on ties or missing traits.
  * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
- * - Player blind roll (All skills) if clicked with no target.
+ * - Player blind roll prioritizes selected skill and shows ALL skills (including custom lores) as secondary.
  * - Displays the Truth alongside Dubious Knowledge on failures.
  */
 
@@ -532,47 +532,95 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         catch (err) { ui.notifications.error("Roll error."); return; }
         const d20 = roll.dice[0].results[0].result;
 
-        const skillPromises = Object.keys(SKILL_DICTIONARY).map(async key => {
-            if (key === 'lore') {
-                const best = getBestLore(actor, specialLoreKeys);
-                if (!best) return null;
-                return await evaluateSkillRoll(actor, best.key, null, best.label, d20, circumstanceBonus);
-            }
-            return await evaluateSkillRoll(actor, key, null, null, d20, circumstanceBonus);
-        });
+        // 1. Identify and Roll the Primary Skill First
+        let primaryPenalty = 0;
+        let primaryLabel = null;
 
-        for (const sLore of specialLores) {
-            let penalty = 0;
-            let label = sLore.label;
-
-            if (sLore.isEsoteric && sLore.hasDiverse) {
-                penalty = -2;
-                label += " (Diverse -2)";
+        const primaryLore = specialLores.find(sl => sl.key === skillKey);
+        if (primaryLore) {
+            primaryLabel = primaryLore.label;
+            if (primaryLore.isEsoteric && primaryLore.hasDiverse) {
+                primaryPenalty = -2;
+                primaryLabel += " (Diverse -2)";
             }
-            skillPromises.push(evaluateSkillRoll(actor, sLore.key, null, label, d20, circumstanceBonus + penalty));
+        } else if (!SKILL_DICTIONARY[skillKey] && skillKey !== 'lore') {
+            const skInfo = getSkillInfo(actor, skillKey);
+            primaryLabel = skInfo ? skInfo.label : skillKey;
         }
 
-        const allSkills = (await Promise.all(skillPromises)).filter(x => x);
+        const primaryResult = await evaluateSkillRoll(actor, skillKey, null, primaryLabel, d20, circumstanceBonus + primaryPenalty);
+
+        // 2. Queue up the Secondary Skills
+        const secondaryPromises = [];
+        const rolledKeys = new Set([skillKey]); // Prevent duplicating the primary roll
+
+        // Queue standard skills
+        const skillKeysToRoll = Object.keys(SKILL_DICTIONARY).filter(k => k !== 'lore');
+        for (const k of skillKeysToRoll) {
+            if (!rolledKeys.has(k)) {
+                secondaryPromises.push(evaluateSkillRoll(actor, k, null, null, d20, circumstanceBonus));
+                rolledKeys.add(k);
+            }
+        }
+
+        // Queue Special Lores (Esoteric, Bardic, etc.)
+        for (const sLore of specialLores) {
+            if (!rolledKeys.has(sLore.key)) {
+                let penalty = 0;
+                let label = sLore.label;
+
+                if (sLore.isEsoteric && sLore.hasDiverse) {
+                    penalty = -2;
+                    label += " (Diverse -2)";
+                }
+                secondaryPromises.push(evaluateSkillRoll(actor, sLore.key, null, label, d20, circumstanceBonus + penalty));
+                rolledKeys.add(sLore.key);
+            }
+        }
+
+        // --- NEW: Dynamically scan for and queue all other Custom Lores ---
+        const systemData = actor.system ?? actor.data?.system ?? {};
+        const actorSkills = systemData.skills ?? {};
+        for (const [key, skill] of Object.entries(actorSkills)) {
+            if (isSkillALore(actor, key, skill) && !rolledKeys.has(key)) {
+                secondaryPromises.push(evaluateSkillRoll(actor, key, null, skill.label || "Custom Lore", d20, circumstanceBonus));
+                rolledKeys.add(key);
+            }
+        }
+
+        const secondaryResults = (await Promise.all(secondaryPromises)).filter(x => x);
+
+        const pMod = primaryResult.total - d20;
 
         let blindHtml = `<div style="padding:6px; font-family: 'Signika', sans-serif;">
-            <h4 style="border-bottom: 2px solid #333; padding-bottom: 4px;">Blind Recall Knowledge</h4>
-            <p style="margin-bottom: 4px;"><strong>Actor:</strong> ${escapeHtml(actor.name)}</p>
-            <p style="margin-top: 0;"><strong>Base d20 Roll:</strong> <b>${d20}</b></p>
-            <ul style="list-style: none; padding-left: 0; margin-bottom: 10px;">`;
+            <h4 style="border-bottom: 2px solid #333; padding-bottom: 4px; margin-bottom: 6px;">Blind Recall Knowledge</h4>
+            <p style="margin-bottom: 8px;"><strong>Actor:</strong> ${escapeHtml(actor.name)}</p>
+            <p style="margin-top: 0; margin-bottom: 8px;"><strong>Base d20 Roll:</strong> <b>${d20}</b></p>
+            
+            <div style="border-left: 4px solid #0055aa; padding-left:8px; margin-bottom:10px; background: rgba(0,0,0,0.03); padding-top:4px; padding-bottom:4px;">
+                <div style="font-size: 0.9em; color:#444; margin-bottom: 2px;">Primary Skill</div>
+                <strong style="font-size: 1.1em;">${escapeHtml(primaryResult.label)}:</strong> <b style="font-size: 1.1em;">${primaryResult.total}</b> 
+                <span style="font-size:0.85em; color:#555;">(Mod: ${pMod >= 0 ? '+' : ''}${pMod})</span>
+            </div>
 
-        for (let r of allSkills) {
+            <div style="font-size: 0.85em; color: #444; margin-bottom: 4px; padding-top: 4px; border-top: 1px dashed #ccc;"><strong>Secondary Skills:</strong></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px;">`;
+
+        for (let r of secondaryResults) {
             const mod = r.total - d20;
-            blindHtml += `<li style="margin-bottom: 4px; padding: 4px; background: rgba(0,0,0,0.03); border-left: 3px solid #666;">
+            blindHtml += `<div style="padding: 2px 4px; background: rgba(0,0,0,0.03); border-left: 2px solid #666; font-size: 0.9em;">
                 <strong>${escapeHtml(r.label)}:</strong> <b>${r.total}</b> 
-                <span style="font-size:0.85em; color:#555;">(Mod: ${mod >= 0 ? '+' : ''}${mod})</span>
-            </li>`;
+                <span style="font-size:0.85em; color:#555;">(${mod >= 0 ? '+' : ''}${mod})</span>
+            </div>`;
         }
-        blindHtml += `</ul><p style="font-size: 0.85em; color: #444; margin-bottom: 0;"><em>No target selected.</em></p></div>`;
+        blindHtml += `</div><p style="font-size: 0.85em; color: #aa5500; margin-bottom: 0;"><em>No target selected. General recall knowledge check.</em></p></div>`;
 
         const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
 
         await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: blindHtml, whisper: gmIds, blind: true });
-        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: actor }), content: `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content"><p><b>${escapeHtml(actor.name)}</b> tries to recall information about a general topic...</p></div></div>` });
+
+        // Pass the explicit primary label to the chat so the players know what skill was pushed
+        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: actor }), content: `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content"><p><b>${escapeHtml(actor.name)}</b> tries to recall information about a general topic using their skill in <b>${escapeHtml(primaryResult.label)}</b>...</p></div></div>` });
         return;
     }
 
@@ -755,10 +803,11 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
     const targetWarning = hasTarget
         ? `<p style="color: green;"><em><i class="fas fa-bullseye"></i> Target detected. DC and traits will be calculated secretly.</em></p>`
         : (isGM
-            ? `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target. Will roll selected skill for the whole party.</em></p>`
-            : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target. Will roll a blind d20 for ALL your skills instead.</em></p>`);
+            ? `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target selected.</em></p>`
+            : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target selected. Will roll a generic recall knowledge check.</em></p>`);
 
-    const questionHtml = !isGM ? `
+    // Only prompt for a specific question if the player has an actual target
+    const questionHtml = (!isGM && hasTarget) ? `
       <div class="form-group">
         <label>Question:</label>
         <select id="question-select" name="question">
