@@ -7,8 +7,8 @@
  * - GM view retrieves all information at once, plus rolls for related skills.
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
  * - Shares the primary d20 roll across all related skill checks.
- * - Dynamically detects Special Lores (Esoteric, Loremaster, Bardic) and auto-rolls them.
- * - Smart Suggestions: Auto-recommends Universal Lores if their modifier beats the base skill.
+ * - Dynamically detects Special Lores (Esoteric, Loremaster, Bardic) via fuzzy matching.
+ * - Smart Suggestions: Auto-recommends Universal Lores on ties or missing traits.
  * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
  * - Player blind roll (All skills) if clicked with no target.
  * - Displays the Truth alongside Dubious Knowledge on failures.
@@ -383,10 +383,15 @@ function getSpecialLores(actor) {
     const skills = systemData.skills ?? {};
 
     for (const [key, skill] of Object.entries(skills)) {
-        const label = (skill.label || "").toLowerCase();
-        if (label === "bardic" || label === "loremaster" || label === "esoteric" || label === "bardic lore" || label === "loremaster lore" || label === "esoteric lore") {
+        // Robust fuzzy matching to catch PF2e generic formatting like "Lore (Bardic)" or exact slugs.
+        const label = (skill.label || skill.name || "").toString().toLowerCase().trim();
+        const slug = (skill.slug || key || "").toString().toLowerCase().trim();
 
-            let isEsoteric = (label === "esoteric" || label === "esoteric lore");
+        const isBardic = label.includes("bardic") || slug.includes("bardic");
+        const isLoremaster = label.includes("loremaster") || slug.includes("loremaster");
+        const isEsoteric = label.includes("esoteric") || slug.includes("esoteric");
+
+        if (isBardic || isLoremaster || isEsoteric) {
             let hasDiverse = false;
 
             if (isEsoteric) {
@@ -395,7 +400,7 @@ function getSpecialLores(actor) {
 
             specialLores.push({
                 key: key,
-                label: skill.label,
+                label: skill.label || "Special Lore",
                 isEsoteric: isEsoteric,
                 hasDiverse: hasDiverse
             });
@@ -664,7 +669,7 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
         specialLores = getSpecialLores(roller);
         for (const sl of specialLores) {
             let lbl = sl.label;
-            if (sl.isEsoteric && sl.hasDiverse && !targets.length) lbl += " (Diverse)";
+            if (sl.isEsoteric && sl.hasDiverse && !targets.length) lbl += " (Diverse -2)";
             dynamicSkills[sl.key] = lbl;
         }
     }
@@ -673,20 +678,27 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
 
     // --- SMART SUGGESTION OVERRIDE --- 
     // Compares the base suggested skill modifier against the Special Lore modifiers. 
-    // If a Special Lore is mathematically superior, it overrides the dropdown suggestion.
+    // If a Special Lore is mathematically superior (or tied), it overrides the dropdown suggestion.
+    let bestMod = -99;
+    let bestSkill = suggestedSkill;
+
     if (suggestedSkill && roller) {
         const baseSkillInfo = getSkillInfo(roller, suggestedSkill);
-        // Fallback to -99 if the base skill is completely untrained
-        const baseMod = Number(baseSkillInfo?.mod ?? baseSkillInfo?.value ?? baseSkillInfo?.totalModifier ?? baseSkillInfo?.total ?? -99);
+        bestMod = Number(baseSkillInfo?.mod ?? baseSkillInfo?.value ?? baseSkillInfo?.totalModifier ?? baseSkillInfo?.total ?? -99);
+    }
 
-        let bestMod = baseMod;
-        let bestSkill = suggestedSkill;
-
+    if (roller && specialLores.length > 0) {
         for (const sl of specialLores) {
             const slInfo = getSkillInfo(roller, sl.key);
-            const slMod = Number(slInfo?.mod ?? slInfo?.value ?? slInfo?.totalModifier ?? slInfo?.total ?? -99);
+            let slMod = Number(slInfo?.mod ?? slInfo?.value ?? slInfo?.totalModifier ?? slInfo?.total ?? -99);
 
-            if (slMod > bestMod) {
+            // Apply diverse lore penalty to the prediction if no target
+            if (sl.isEsoteric && sl.hasDiverse && targets.length === 0) {
+                slMod -= 2;
+            }
+
+            // Using >= ensures that Universal Lores take priority if tied with a base skill
+            if (slMod >= bestMod) {
                 bestMod = slMod;
                 bestSkill = sl.key;
             }
