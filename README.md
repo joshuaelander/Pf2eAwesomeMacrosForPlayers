@@ -1,4 +1,4 @@
-# Pf2eAwesomeMacrosForPlayers
+# Pf2e Awesome Macros For Players
 Overview: A repo with more useful macros, this time for players to use!
 
 Contents: \
