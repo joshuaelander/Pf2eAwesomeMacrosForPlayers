@@ -8,6 +8,7 @@
  * - Analyzes targeted enemies to provide contextual hints (Truths & Lies).
  * - Shares the primary d20 roll across all related skill checks.
  * - Dynamically detects Special Lores (Esoteric, Loremaster, Bardic) via fuzzy matching.
+ * - Auto-Injects all specific player lores (Undead, Scouting, etc.) into the dropdown.
  * - Smart Suggestions: Auto-recommends Universal Lores on ties or missing traits.
  * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
  * - Player blind roll (All skills) if clicked with no target.
@@ -375,6 +376,27 @@ function getSkillInfo(actor, skillKey) {
     return null;
 }
 
+// --- Robustly checks if a skill is a Lore, regardless of its name ---
+function isSkillALore(actor, key, skill) {
+    if (!skill) return false;
+
+    // 1. Check system flags (Modern PF2e sets this securely)
+    if (skill.lore === true || skill.isLore === true) return true;
+
+    // 2. Check string labels as a fallback
+    const keyLower = key.toLowerCase();
+    const labelLower = (skill.label || "").toLowerCase();
+    if (keyLower.includes('lore') || labelLower.includes('lore')) return true;
+
+    // 3. Absolute confirmation: Check if the key matches a mechanical Lore Item on the actor
+    if (actor) {
+        const loreItems = actor.itemTypes?.lore || Array.from(actor.items || []).filter(i => i.type === 'lore');
+        if (loreItems.some(i => i.id === key || i.slug === key || i.system?.slug === key)) return true;
+    }
+
+    return false;
+}
+
 function getSpecialLores(actor) {
     const specialLores = [];
     if (!actor) return specialLores;
@@ -383,7 +405,6 @@ function getSpecialLores(actor) {
     const skills = systemData.skills ?? {};
 
     for (const [key, skill] of Object.entries(skills)) {
-        // Robust fuzzy matching to catch PF2e generic formatting like "Lore (Bardic)" or exact slugs.
         const label = (skill.label || skill.name || "").toString().toLowerCase().trim();
         const slug = (skill.slug || key || "").toString().toLowerCase().trim();
 
@@ -409,13 +430,14 @@ function getSpecialLores(actor) {
     return specialLores;
 }
 
+// --- Uses the isSkillALore function ---
 function getBestLore(actor, excludeKeys = []) {
     const systemData = actor.system ?? actor.data?.system ?? {};
     const skills = systemData.skills ?? {};
     let best = null;
     let maxMod = -Infinity;
     for (const [key, skill] of Object.entries(skills)) {
-        if (skill.lore || key.toLowerCase().includes('lore')) {
+        if (isSkillALore(actor, key, skill)) {
             if (excludeKeys.includes(key)) continue;
 
             const mod = Number(skill.mod ?? skill.value ?? skill.totalModifier ?? skill.total ?? 0);
@@ -519,12 +541,10 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             return await evaluateSkillRoll(actor, key, null, null, d20, circumstanceBonus);
         });
 
-        // Auto-inject Special Lores into the Blind Roll
         for (const sLore of specialLores) {
             let penalty = 0;
             let label = sLore.label;
 
-            // Apply the RAW Diverse Lore penalty strictly on generic (untargeted) topic rolls
             if (sLore.isEsoteric && sLore.hasDiverse) {
                 penalty = -2;
                 label += " (Diverse -2)";
@@ -606,7 +626,6 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             }
         }
 
-        // Auto-inject Special Lores into the Related Rolls
         for (const sLore of specialLores) {
             if (sLore.key === skillKey) continue;
 
@@ -663,14 +682,34 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
 
     const dynamicSkills = { ...SKILL_DICTIONARY };
     let specialLores = [];
+    let specialKeys = [];
     const targets = Array.from(game.user.targets ?? []);
 
     if (roller) {
         specialLores = getSpecialLores(roller);
+        specialKeys = specialLores.map(sl => sl.key);
+
         for (const sl of specialLores) {
             let lbl = sl.label;
             if (sl.isEsoteric && sl.hasDiverse && !targets.length) lbl += " (Diverse -2)";
             dynamicSkills[sl.key] = lbl;
+        }
+
+        // --- Inject all custom lores directly into the dropdown ---
+        const systemData = roller.system ?? roller.data?.system ?? {};
+        const skills = systemData.skills ?? {};
+        let foundSpecificLore = false;
+
+        for (const [key, skill] of Object.entries(skills)) {
+            if (isSkillALore(roller, key, skill) && !specialKeys.includes(key)) {
+                dynamicSkills[key] = skill.label || "Custom Lore";
+                foundSpecificLore = true;
+            }
+        }
+
+        // Remove the broken "Lore (Generic)" placeholder if real lores were successfully mapped
+        if (foundSpecificLore) {
+            delete dynamicSkills['lore'];
         }
     }
 
@@ -692,12 +731,10 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
             const slInfo = getSkillInfo(roller, sl.key);
             let slMod = Number(slInfo?.mod ?? slInfo?.value ?? slInfo?.totalModifier ?? slInfo?.total ?? -99);
 
-            // Apply diverse lore penalty to the prediction if no target
             if (sl.isEsoteric && sl.hasDiverse && targets.length === 0) {
                 slMod -= 2;
             }
 
-            // Using >= ensures that Universal Lores take priority if tied with a base skill
             if (slMod >= bestMod) {
                 bestMod = slMod;
                 bestSkill = sl.key;
