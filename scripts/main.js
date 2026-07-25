@@ -46,6 +46,13 @@ import {
     MAGUS_ANALYSIS_MACRO_ICON,
 } from "./magus-analysis.js";
 
+import {
+    mastermindRecall,
+    MASTERMIND_RECALL_MACRO_NAME,
+    MASTERMIND_RECALL_MACRO_ICON,
+    applyMastermindOffGuardAsGM
+} from "./mastermind-rogues-recall.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();` },
@@ -54,7 +61,8 @@ const DESIRED_MACROS = [
     { name: MONSTER_HUNTER_MACRO_NAME, icon: MONSTER_HUNTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMonsterHunter();` },
     { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();` },
     { name: COMBAT_ASSESSMENT_MACRO_NAME, icon: COMBAT_ASSESSMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeCombatAssessment();` },
-    { name: MAGUS_ANALYSIS_MACRO_NAME, icon: MAGUS_ANALYSIS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMagusAnalysis();` }
+    { name: MAGUS_ANALYSIS_MACRO_NAME, icon: MAGUS_ANALYSIS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMagusAnalysis();` },
+    { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();` }
 ];
 
 // Hook to handle the "Create Actor" button on the chat card for players
@@ -165,6 +173,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeKnownWeaknesses = executeKnownWeaknesses;
     game.pf2eAwesomePlayerMacros.executeCombatAssessment = executeCombatAssessment;
     game.pf2eAwesomePlayerMacros.executeMagusAnalysis = executeMagusAnalysis;
+    game.pf2eAwesomePlayerMacros.mastermindRecall = mastermindRecall;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
@@ -243,6 +252,9 @@ Hooks.once('ready', async () => {
             return { success: true, actorId: newActor.id };
         });
 
+        // 3. Mastermind Recall Socket
+        playerModuleSocket.register("applyMastermindOffGuard", applyMastermindOffGuardAsGM);
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
@@ -272,6 +284,18 @@ Hooks.once('ready', async () => {
                 ui.notifications.error("A Game Master must be online to generate your character sheet.");
             }
             return { success: false, error: "no_gm" };
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.applyMastermindOffGuard = async (targetActorUuid, durationValue) => {
+        if (!playerModuleSocket) return false;
+        try {
+            return await playerModuleSocket.executeAsGM("applyMastermindOffGuard", targetActorUuid, durationValue);
+        } catch (error) {
+            if (error.name === "SocketlibNoGMConnectedError") {
+                ui.notifications.error("A Game Master must be online to apply the Mastermind effect.");
+            }
+            return false;
         }
     };
 

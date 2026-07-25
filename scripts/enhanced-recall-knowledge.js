@@ -356,10 +356,10 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`) : `Unknown DC`;
 
     const title = creatureName
-        ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>(${dcText})${qTitle}`
-        : `Recall Knowledge<br>(${dcText})${qTitle}`;
+        ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>${dcText}${qTitle}`
+        : `Recall Knowledge<br>${dcText}${qTitle}`;
 
-    const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h4 style="border-bottom: 2px solid #333; padding-bottom: 4px;">${title}</h4>${rows}</div>`;
+    const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h5 style="border-bottom: 2px solid #333; padding-bottom: 2px;">${title}</h5>${rows}</div>`;
     const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
 
     await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: content, whisper: gmIds, blind: true });
@@ -708,6 +708,9 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         publicContent += `</div></div>`;
         await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker(), content: publicContent });
     }
+
+    // Broadcast the results for other macros to catch
+    Hooks.callAll('enhancedRecallKnowledgeComplete', { results: results });
 }
 
 function getSuggestedSkill(actor) {

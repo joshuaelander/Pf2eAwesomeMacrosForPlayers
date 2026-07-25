@@ -116,7 +116,7 @@ export async function executeCombatAssessment() {
 
                         if (hasOA) {
                             bonus = outcome === "criticalSuccess" ? 4 : 2;
-                            bonusText = `<br><span style="color:green; font-size:0.9em;"><strong>Observational Analysis:</strong> +${bonus} circumstance bonus applied to RK!</span>`;
+                            bonusText = `<br><span style="color:green; font-size:0.9em;"><strong>Observational Analysis:</strong> +${bonus} circumstance bonus applied to recall knowledge!</span>`;
                         }
 
                         await ChatMessage.create({
