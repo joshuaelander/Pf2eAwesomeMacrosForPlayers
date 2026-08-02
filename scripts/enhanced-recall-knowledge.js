@@ -483,6 +483,22 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forced
     return { label: skillLabel, total: total, d20: d20Result, degree: degree, breakdown: breakdown };
 }
 
+// --- Handles the public chat message generation based on target status ---
+async function createPublicRecallMessage(actorRolls, hasTarget, question, isGM) {
+    const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
+    const askedStr = (!isGM && hasTarget) ? ` to learn about its <b>${escapeHtml(qLabels[question] || 'General Info')}</b>` : '';
+
+    let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content">`;
+
+    for (const roll of actorRolls) {
+        const topicStr = hasTarget ? `the creature` : `a general topic`;
+        publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(roll.actorName)}</b> tries to recall information about ${topicStr} using their skill in <b>${escapeHtml(roll.skillLabel)}</b>${askedStr}.</p>`;
+    }
+    publicContent += `</div></div>`;
+
+    await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker(), content: publicContent });
+}
+
 async function performRecallKnowledge(html, circumstanceBonus = 0) {
     const skillKey = html.find('[name="skill"]').val();
     const question = html.find('[name="question"]').val() || 'all';
@@ -520,7 +536,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         return;
     }
 
-    // --- Player Blind Roll (All Skills) if no target is selected ---
+    // --- Player Blind Roll if no target is selected ---
     if (!hasTarget && !game.user.isGM) {
         const actor = targetActors[0];
 
@@ -578,7 +594,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             }
         }
 
-        // --- NEW: Dynamically scan for and queue all other Custom Lores ---
+        // --- Dynamically scan for and queue all other Custom Lores ---
         const systemData = actor.system ?? actor.data?.system ?? {};
         const actorSkills = systemData.skills ?? {};
         for (const [key, skill] of Object.entries(actorSkills)) {
@@ -619,8 +635,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
 
         await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: blindHtml, whisper: gmIds, blind: true });
 
-        // Pass the explicit primary label to the chat so the players know what skill was pushed
-        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: actor }), content: `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content"><p><b>${escapeHtml(actor.name)}</b> tries to recall information about a general topic using their skill in <b>${escapeHtml(primaryResult.label)}</b>...</p></div></div>` });
+        await createPublicRecallMessage([{ actorName: actor.name, skillLabel: primaryResult.label }], false, question, game.user.isGM);
         return;
     }
 
@@ -698,15 +713,9 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel);
 
     if (isPCSelected || (!game.user.isGM && targetActors.length === 1)) {
-        const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
-        const askedStr = game.user.isGM ? '' : ` to learn about its <b>${escapeHtml(qLabels[question])}</b>`;
 
-        let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content">`;
-        for (const res of results) {
-            publicContent += `<p style="margin-bottom: 6px;"><b>${escapeHtml(res.actorName)}</b> tries to recall information about the creature using their skill in <b>${escapeHtml(res.primary.label)}</b>${askedStr}.</p>`;
-        }
-        publicContent += `</div></div>`;
-        await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker(), content: publicContent });
+        const actorRolls = results.map(res => ({ actorName: res.actorName, skillLabel: res.primary.label }));
+        await createPublicRecallMessage(actorRolls, hasTarget ? true : false, question, game.user.isGM);
     }
 
     // Broadcast the results for other macros to catch
