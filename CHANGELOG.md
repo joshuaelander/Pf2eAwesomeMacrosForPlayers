@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+8/2/2026 - Version 1.3.8 - Added mastermind macro. Fixed some UI formatting and weirdness. \
+\
 7/25/ 2026 - Version 1.3.6 - Cleaned up some weirdness when players rolled recall knowledge checks with no target selected. \
 \
 7/25/2026 - Version 1.3.5 - Updated the enhanced recall knowledge macro to work better with special lores and added a few macros for specific classes to call the enhanced recall knowledge macro. \
