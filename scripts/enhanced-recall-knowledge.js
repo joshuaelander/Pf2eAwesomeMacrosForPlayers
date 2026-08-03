@@ -12,7 +12,7 @@
  * - Smart Suggestions: Auto-recommends Universal Lores on ties or missing traits.
  * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
  * - Player blind roll prioritizes selected skill and shows ALL skills (including custom lores) as secondary.
- * - Displays the Truth alongside Dubious Knowledge on failures.
+ * - Checks for the "Dubious Knowledge" feat on Failures to determine what information to display.
  * - Allows manual situational modifiers via UI slider.
  */
 
@@ -279,7 +279,7 @@ function getLieString(qType, lie, otherText) {
     }
 }
 
-function getHintForDegree(degree, analysis, question, otherText) {
+function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowledge = false) {
     if (!analysis) return "<em>No target selected.</em>";
     const { truths, lies } = analysis;
 
@@ -289,7 +289,13 @@ function getHintForDegree(degree, analysis, question, otherText) {
 
         if (degree === 'Critical Success') return `<span style="color:#008800;"><b>Reveal Multiple (You are sure that...):</b><br>${truthsHtml}</span>`;
         if (degree === 'Success') return `<span style="color:#0055aa;"><b>Reveal One (You think that...):</b><br>${truthsHtml}</span>`;
-        if (degree === 'Failure') return `<span style="color:#aa5500;"><b>Dubious Knowledge (You think that...):</b><br><br><b>True Info:</b><br>${truthsHtml}<br><br><b>False Info:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+        if (degree === 'Failure') {
+            if (hasDubiousKnowledge) {
+                return `<span style="color:#aa5500;"><b>Dubious Knowledge (You think that...):</b><br><br><b>True Info:</b><br>${truthsHtml}<br><br><b>False Info:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+            } else {
+                return `<span style="color:#aa5500;"><b>Failure:</b> You are not sure about this creature.</span>`;
+            }
+        }
         if (degree === 'Critical Failure') return `<span style="color:#aa0000;"><b>Confident Falsehood (You are sure that...):</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
         return "";
     }
@@ -301,8 +307,12 @@ function getHintForDegree(degree, analysis, question, otherText) {
     } else if (degree === 'Success') {
         return `<span style="color:#0055aa;"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
     } else if (degree === 'Failure') {
-        const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-        return `<span style="color:#aa5500;"><b>True Info:</b> ${truthAns}<br><br><b>Dubious Knowledge (or No Info) — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+        if (hasDubiousKnowledge) {
+            const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
+            return `<span style="color:#aa5500;"><b>Dubious Knowledge:</b><br><b>True Info:</b> ${truthAns}<br><br><b>False Info — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+        } else {
+            return `<span style="color:#aa5500;"><b>Failure:</b> You are not sure about this creature.</span>`;
+        }
     } else if (degree === 'Critical Failure') {
         const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You are sure that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
         return `<span style="color:#aa0000;"><b>Confident Falsehood — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
@@ -318,7 +328,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
         const p = res.primary;
         const color = colorMap[p.degree] || '#000000';
 
-        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText) : '<em>No target selected.</em>';
+        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText, res.hasDubiousKnowledge) : '<em>No target selected.</em>';
 
         let relatedHtml = '';
         if (res.related && res.related.length > 0) {
@@ -674,6 +684,9 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         const specialLores = getSpecialLores(actor);
         const specialLoreKeys = specialLores.map(sl => sl.key);
 
+        // Check if the actor possesses the Dubious Knowledge feat
+        const hasDubiousKnowledge = actor.items?.some(i => i.slug === "dubious-knowledge" || i.system?.slug === "dubious-knowledge") || false;
+
         let primaryPenalty = 0;
         let primaryLabel = null;
 
@@ -712,7 +725,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             relatedRolls.push(await evaluateSkillRoll(actor, sLore.key, dc, label, primaryD20, finalBonus + penalty));
         }
 
-        return { actorId: actor.id, actorName: actor.name, primary: primaryRoll, related: relatedRolls };
+        return { actorId: actor.id, actorName: actor.name, hasDubiousKnowledge: hasDubiousKnowledge, primary: primaryRoll, related: relatedRolls };
     });
 
     let results;
