@@ -13,6 +13,7 @@
  * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
  * - Player blind roll prioritizes selected skill and shows ALL skills (including custom lores) as secondary.
  * - Displays the Truth alongside Dubious Knowledge on failures.
+ * - Allows manual situational modifiers via UI slider.
  */
 
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
@@ -309,7 +310,7 @@ function getHintForDegree(degree, analysis, question, otherText) {
     return "";
 }
 
-async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel) {
+async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel, manualBonus) {
     const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000', 'Unknown': '#555555' };
 
     let rows = '';
@@ -354,10 +355,11 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
 
     const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`) : `Unknown DC`;
+    const bonusText = manualBonus !== 0 ? `<br><span style="color:#aa0000; font-size: 0.85em;">(Includes ${manualBonus > 0 ? '+' : ''}${manualBonus} manual modifier)</span>` : '';
 
     const title = creatureName
-        ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>${dcText}${qTitle}`
-        : `Recall Knowledge<br>${dcText}${qTitle}`;
+        ? `Recall Knowledge:<br>${escapeHtml(creatureName)}<br>${dcText}${qTitle}${bonusText}`
+        : `Recall Knowledge<br>${dcText}${qTitle}${bonusText}`;
 
     const content = `<div class="recall-knowledge-result" style="padding:6px; font-family: 'Signika', sans-serif;"><h5 style="border-bottom: 2px solid #333; padding-bottom: 2px;">${title}</h5>${rows}</div>`;
     const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
@@ -504,6 +506,10 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     const question = html.find('[name="question"]').val() || 'all';
     const otherText = html.find('[name="otherText"]').val() || '';
 
+    // Extract the manual bonus and combine it with any programmatic bonuses
+    const manualBonus = parseInt(html.find('[name="bonusModifier"]').val()) || 0;
+    const finalBonus = circumstanceBonus + manualBonus;
+
     const targets = Array.from(game.user.targets ?? []);
     const hasTarget = targets.length > 0;
 
@@ -564,7 +570,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             primaryLabel = skInfo ? skInfo.label : skillKey;
         }
 
-        const primaryResult = await evaluateSkillRoll(actor, skillKey, null, primaryLabel, d20, circumstanceBonus + primaryPenalty);
+        const primaryResult = await evaluateSkillRoll(actor, skillKey, null, primaryLabel, d20, finalBonus + primaryPenalty);
 
         // 2. Queue up the Secondary Skills
         const secondaryPromises = [];
@@ -574,7 +580,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         const skillKeysToRoll = Object.keys(SKILL_DICTIONARY).filter(k => k !== 'lore');
         for (const k of skillKeysToRoll) {
             if (!rolledKeys.has(k)) {
-                secondaryPromises.push(evaluateSkillRoll(actor, k, null, null, d20, circumstanceBonus));
+                secondaryPromises.push(evaluateSkillRoll(actor, k, null, null, d20, finalBonus));
                 rolledKeys.add(k);
             }
         }
@@ -589,7 +595,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
                     penalty = -2;
                     label += " (Diverse -2)";
                 }
-                secondaryPromises.push(evaluateSkillRoll(actor, sLore.key, null, label, d20, circumstanceBonus + penalty));
+                secondaryPromises.push(evaluateSkillRoll(actor, sLore.key, null, label, d20, finalBonus + penalty));
                 rolledKeys.add(sLore.key);
             }
         }
@@ -599,7 +605,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         const actorSkills = systemData.skills ?? {};
         for (const [key, skill] of Object.entries(actorSkills)) {
             if (isSkillALore(actor, key, skill) && !rolledKeys.has(key)) {
-                secondaryPromises.push(evaluateSkillRoll(actor, key, null, skill.label || "Custom Lore", d20, circumstanceBonus));
+                secondaryPromises.push(evaluateSkillRoll(actor, key, null, skill.label || "Custom Lore", d20, finalBonus));
                 rolledKeys.add(key);
             }
         }
@@ -629,7 +635,10 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
                 <span style="font-size:0.85em; color:#555;">(${mod >= 0 ? '+' : ''}${mod})</span>
             </div>`;
         }
-        blindHtml += `</div><p style="font-size: 0.85em; color: #aa5500; margin-bottom: 0;"><em>No target selected. General recall knowledge check.</em></p></div>`;
+
+        const blindBonusText = finalBonus !== 0 ? `<p style="font-size: 0.85em; color: #aa0000; margin-top: 4px; margin-bottom: 0;"><em>(Includes ${finalBonus > 0 ? '+' : ''}${finalBonus} manual modifier)</em></p>` : '';
+
+        blindHtml += `</div><p style="font-size: 0.85em; color: #aa5500; margin-bottom: 0;"><em>No target selected. General recall knowledge check.</em></p>${blindBonusText}</div>`;
 
         const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
 
@@ -674,7 +683,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             primaryLabel = primaryLore.label + " (Diverse -2)";
         }
 
-        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc, primaryLabel, null, circumstanceBonus + primaryPenalty);
+        const primaryRoll = await evaluateSkillRoll(actor, skillKey, dc, primaryLabel, null, finalBonus + primaryPenalty);
         const primaryD20 = primaryRoll.d20;
 
         const relatedRolls = [];
@@ -683,9 +692,9 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         for (const relKey of relatedKeys) {
             if (relKey === 'lore') {
                 const bestLore = getBestLore(actor, specialLoreKeys);
-                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label, primaryD20, circumstanceBonus));
+                if (bestLore) relatedRolls.push(await evaluateSkillRoll(actor, bestLore.key, dc, bestLore.label, primaryD20, finalBonus));
             } else {
-                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc, null, primaryD20, circumstanceBonus));
+                relatedRolls.push(await evaluateSkillRoll(actor, relKey, dc, null, primaryD20, finalBonus));
             }
         }
 
@@ -700,7 +709,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
                 label += " (Diverse -2)";
             }
 
-            relatedRolls.push(await evaluateSkillRoll(actor, sLore.key, dc, label, primaryD20, circumstanceBonus + penalty));
+            relatedRolls.push(await evaluateSkillRoll(actor, sLore.key, dc, label, primaryD20, finalBonus + penalty));
         }
 
         return { actorId: actor.id, actorName: actor.name, primary: primaryRoll, related: relatedRolls };
@@ -710,7 +719,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     try { results = await Promise.all(rollPromises); }
     catch (err) { ui.notifications.error('Error performing rolls.'); return; }
 
-    await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel);
+    await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel, finalBonus);
 
     if (isPCSelected || (!game.user.isGM && targetActors.length === 1)) {
 
@@ -841,6 +850,15 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
     <form>
       <div class="form-group"><label>Skill to Use:</label><select id="skill-select" name="skill">${skillOptions}</select></div>
       ${questionHtml}
+      
+      <div class="form-group">
+        <label>Bonus Modifier:</label>
+        <div style="display: flex; align-items: center; width: 100%;">
+            <input type="range" id="bonus-slider" name="bonusModifier" min="-10" max="10" step="1" value="0" style="flex: 1; margin-right: 8px;">
+            <span id="bonus-output" style="width: 30px; text-align: right; font-weight: bold;">0</span>
+        </div>
+      </div>
+
       <hr>
       <div class="form-group" style="display:block;">
         ${targetWarning}
@@ -857,6 +875,11 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
         },
         default: 'roll',
         render: (html) => {
+            html.find('#bonus-slider').on('input', function () {
+                const val = parseInt($(this).val());
+                html.find('#bonus-output').text(val > 0 ? `+${val}` : val);
+            });
+
             if (!isGM) {
                 html.find('#question-select').change(function () {
                     if ($(this).val() === 'other') html.find('#other-text-group').show();
