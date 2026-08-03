@@ -12,12 +12,47 @@
  * - Smart Suggestions: Auto-recommends Universal Lores on ties or missing traits.
  * - Automatically applies RAW penalties for Diverse Lore on non-creature topics.
  * - Player blind roll prioritizes selected skill and shows ALL skills (including custom lores) as secondary.
- * - Checks for the "Dubious Knowledge" feat on Failures to determine what information to display.
+ * - Module Settings integration for UI, failure states, and auto-replying.
  * - Allows manual situational modifiers via UI slider.
  */
 
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
 export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/documents/blueprint-recipe-alchemical.webp";
+
+// --- MODULE SETTINGS INTEGRATION ---
+const MODULE_ID = "pf2e-awesome-macros-for-players";
+
+export function registerSettings() {
+    game.settings.register(MODULE_ID, 'hideModifierBreakdown', {
+        name: 'Hide Modifier Breakdown',
+        hint: 'If enabled, hides the math breakdown (e.g., 10+6) in the GM chat card.',
+        scope: 'world', config: true, type: Boolean, default: false
+    });
+
+    game.settings.register(MODULE_ID, 'failureBehavior', {
+        name: 'Failure Behavior',
+        hint: 'How should normal Failures be handled regarding Dubious Knowledge?',
+        scope: 'world', config: true, type: String,
+        choices: {
+            'failureOnly': 'Failure Only (Never use Dubious Knowledge)',
+            'dubiousKnowledge': 'RAW (Only if actor has Dubious Knowledge feat)',
+            'alwaysDubious': 'Always use Dubious Knowledge'
+        },
+        default: 'dubiousKnowledge'
+    });
+
+    game.settings.register(MODULE_ID, 'autoReply', {
+        name: 'Auto-Reply to Player',
+        hint: 'Automatically whispers the result to the rolling player based on their degree of success.',
+        scope: 'world', config: true, type: Boolean, default: false
+    });
+}
+
+function getSetting(key, defaultValue) {
+    try { return game.settings.get(MODULE_ID, key); }
+    catch (e) { return defaultValue; }
+}
+// -----------------------------------
 
 const SKILL_DICTIONARY = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
 
@@ -322,6 +357,8 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
 
 async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel, manualBonus) {
     const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000', 'Unknown': '#555555' };
+    const hideBreakdown = getSetting('hideModifierBreakdown', false);
+    const autoReplyOn = getSetting('autoReply', false);
 
     let rows = '';
     for (const res of results) {
@@ -329,6 +366,9 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
         const color = colorMap[p.degree] || '#000000';
 
         let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText, res.hasDubiousKnowledge) : '<em>No target selected.</em>';
+        if (autoReplyOn && dc !== null && question !== 'all') {
+            hintHtml += `<br><span style="color:#888; font-size:0.85em;"><em>(Auto-reply pushed to player)</em></span>`;
+        }
 
         let relatedHtml = '';
         if (res.related && res.related.length > 0) {
@@ -336,10 +376,13 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
             relatedHtml += `<strong>Related Skills:</strong><br>`;
             relatedHtml += res.related.map(r => {
                 const rColor = colorMap[r.degree] || '#000';
-                return `<span>${escapeHtml(r.label)}: <b>${r.total}</b> (${escapeHtml(r.breakdown)}) <span style="color:${rColor}; font-weight:bold;">[${r.degree}]</span></span>`;
+                const breakdownStr = hideBreakdown ? '' : ` (${escapeHtml(r.breakdown)})`;
+                return `<span>${escapeHtml(r.label)}: <b>${r.total}</b>${breakdownStr} <span style="color:${rColor}; font-weight:bold;">[${r.degree}]</span></span>`;
             }).join(' <br>');
             relatedHtml += `</div>`;
         }
+
+        const pBreakdownStr = hideBreakdown ? '' : ` (${escapeHtml(p.breakdown)})`;
 
         rows += `
       <div class="recall-knowledge-row" style="border-left: 4px solid ${color}; padding-left:8px; margin-bottom:10px; background: rgba(0,0,0,0.03); padding-top:4px; padding-bottom:4px;">
@@ -348,7 +391,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
             <span style="font-size: 0.9em; color:#444; margin-right: 4px;">Primary Skill</span>
         </div>
         <div style="margin-top: 2px;">
-            <span>${escapeHtml(p.label)}: <b>${p.total}</b> (${escapeHtml(p.breakdown)})</span>
+            <span>${escapeHtml(p.label)}: <b>${p.total}</b>${pBreakdownStr}</span>
             &nbsp;|&nbsp;
             <span style="color:${color}; font-weight:bold; text-transform:uppercase; font-size:0.9em;">${escapeHtml(p.degree)}</span>
         </div>
@@ -511,6 +554,61 @@ async function createPublicRecallMessage(actorRolls, hasTarget, question, isGM) 
     await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker(), content: publicContent });
 }
 
+// --- Sends automated whispers directly to the rolling player ---
+async function sendAutoReply(results, question, otherText, analysis) {
+    if (!analysis || question === 'all') return;
+    const { truths, lies } = analysis;
+
+    for (const res of results) {
+        const p = res.primary;
+        const hasDubious = res.hasDubiousKnowledge;
+        const lie = lies[0];
+
+        let html = `<div class="pf2e chat-card">
+            <header class="card-header flexrow"><h4>Recall Knowledge Result</h4></header>
+            <div class="card-content" style="font-family: 'Signika', sans-serif;">`;
+
+        if (p.degree === 'Critical Success') {
+            const categories = ['weaknesses', 'immunities', 'saves', 'abilities', 'attacks'].filter(c => c !== question);
+            const extraCat = categories[Math.floor(Math.random() * categories.length)];
+
+            html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
+            html += `<p style="color:#008800;"><b>Primary Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
+            html += `<p style="color:#008800;"><b>Bonus Info:</b> ${getTruthString(extraCat, truths, otherText)}</p>`;
+        } else if (p.degree === 'Success') {
+            html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
+            html += `<p style="color:#0055aa;"><b>Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
+        } else if (p.degree === 'Failure') {
+            if (hasDubious) {
+                const chosenName = Math.random() > 0.5 ? analysis.name : lie.fakeName;
+                const arr = [
+                    `<li style="margin-bottom: 4px;">...${getTruthString(question, truths, otherText)}</li>`,
+                    `<li style="margin-bottom: 4px;">...${getLieString(question, lie, otherText)}</li>`
+                ].sort(() => Math.random() - 0.5);
+
+                html += `<p>You think this might be a <b>${escapeHtml(chosenName)}</b>, but your memory is hazy. You recall two conflicting pieces of information:</p>`;
+                html += `<ul style="color:#aa5500;">${arr.join('')}</ul>`;
+            } else {
+                html += `<p style="color:#aa5500;">You rack your brain, but fail to recall any useful information about this creature.</p>`;
+            }
+        } else if (p.degree === 'Critical Failure') {
+            html += `<p>You are certain this is a <b>${escapeHtml(lie.fakeName)}</b>.</p>`;
+            html += `<p style="color:#aa0000;"><b>Info:</b> ${getLieString(question, lie, otherText)}</p>`;
+        } else {
+            html += `<p>Result unknown.</p>`;
+        }
+
+        html += `</div></div>`;
+
+        await ChatMessage.create({
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker({ actor: game.actors.get(res.actorId) }),
+            content: html,
+            whisper: [game.user.id]
+        });
+    }
+}
+
 async function performRecallKnowledge(html, circumstanceBonus = 0) {
     const skillKey = html.find('[name="skill"]').val();
     const question = html.find('[name="question"]').val() || 'all';
@@ -621,8 +719,8 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         }
 
         const secondaryResults = (await Promise.all(secondaryPromises)).filter(x => x);
-
         const pMod = primaryResult.total - d20;
+        const hideBreakdown = getSetting('hideModifierBreakdown', false);
 
         let blindHtml = `<div style="padding:6px; font-family: 'Signika', sans-serif;">
             <h4 style="border-bottom: 2px solid #333; padding-bottom: 4px; margin-bottom: 6px;">Blind Recall Knowledge</h4>
@@ -632,7 +730,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             <div style="border-left: 4px solid #0055aa; padding-left:8px; margin-bottom:10px; background: rgba(0,0,0,0.03); padding-top:4px; padding-bottom:4px;">
                 <div style="font-size: 0.9em; color:#444; margin-bottom: 2px;">Primary Skill</div>
                 <strong style="font-size: 1.1em;">${escapeHtml(primaryResult.label)}:</strong> <b style="font-size: 1.1em;">${primaryResult.total}</b> 
-                <span style="font-size:0.85em; color:#555;">(Mod: ${pMod >= 0 ? '+' : ''}${pMod})</span>
+                <span style="font-size:0.85em; color:#555;">${hideBreakdown ? '' : `(Mod: ${pMod >= 0 ? '+' : ''}${pMod})`}</span>
             </div>
 
             <div style="font-size: 0.85em; color: #444; margin-bottom: 4px; padding-top: 4px; border-top: 1px dashed #ccc;"><strong>Secondary Skills:</strong></div>
@@ -642,7 +740,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
             const mod = r.total - d20;
             blindHtml += `<div style="padding: 2px 4px; background: rgba(0,0,0,0.03); border-left: 2px solid #666; font-size: 0.9em;">
                 <strong>${escapeHtml(r.label)}:</strong> <b>${r.total}</b> 
-                <span style="font-size:0.85em; color:#555;">(${mod >= 0 ? '+' : ''}${mod})</span>
+                <span style="font-size:0.85em; color:#555;">${hideBreakdown ? '' : `(${mod >= 0 ? '+' : ''}${mod})`}</span>
             </div>`;
         }
 
@@ -684,8 +782,17 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
         const specialLores = getSpecialLores(actor);
         const specialLoreKeys = specialLores.map(sl => sl.key);
 
-        // Check if the actor possesses the Dubious Knowledge feat
-        const hasDubiousKnowledge = actor.items?.some(i => i.slug === "dubious-knowledge" || i.system?.slug === "dubious-knowledge") || false;
+        // Retrieve setting to determine how to calculate Dubious Knowledge
+        let hasDubiousKnowledge = false;
+        const failBehavior = getSetting('failureBehavior', 'dubiousKnowledge');
+
+        if (failBehavior === 'alwaysDubious') {
+            hasDubiousKnowledge = true;
+        } else if (failBehavior === 'dubiousKnowledge') {
+            hasDubiousKnowledge = actor.items?.some(i => i.slug === "dubious-knowledge" || i.system?.slug === "dubious-knowledge") || false;
+        } else {
+            hasDubiousKnowledge = false;
+        }
 
         let primaryPenalty = 0;
         let primaryLabel = null;
@@ -735,9 +842,13 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel, finalBonus);
 
     if (isPCSelected || (!game.user.isGM && targetActors.length === 1)) {
-
         const actorRolls = results.map(res => ({ actorName: res.actorName, skillLabel: res.primary.label }));
         await createPublicRecallMessage(actorRolls, hasTarget ? true : false, question, game.user.isGM);
+    }
+
+    // Auto-Reply Handler
+    if (getSetting('autoReply', false) && hasTarget) {
+        await sendAutoReply(results, question, otherText, creatureAnalysis);
     }
 
     // Broadcast the results for other macros to catch

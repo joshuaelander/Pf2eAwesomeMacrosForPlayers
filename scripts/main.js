@@ -14,6 +14,7 @@ import {
     openRecallKnowledgeDialog,
     ENHANCED_RECALL_MACRO_NAME,
     ENHANCED_RECALL_MACRO_ICON,
+    registerSettings,
 } from "./enhanced-recall-knowledge.js";
 
 import {
@@ -154,6 +155,11 @@ async function syncMacros() {
         ui.notifications.info(`[PF2e Awesome Macros For Players] Sync complete! Created: ${createdCount}, Updated: ${updatedCount}.`);
     }
 }
+
+// --- HOOKS --- //
+Hooks.once('init', () => {
+    registerSettings();
+});
 
 // Global variable for our socket
 let playerModuleSocket;
