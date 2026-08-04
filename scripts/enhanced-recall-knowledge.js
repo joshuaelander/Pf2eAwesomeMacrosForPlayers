@@ -19,15 +19,12 @@
 export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
 export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/documents/blueprint-recipe-alchemical.webp";
 
-// --- MODULE SETTINGS INTEGRATION ---
 const MODULE_ID = "pf2e-awesome-macros-for-players";
 
 function getSetting(key, defaultValue) {
     try { return game.settings.get(MODULE_ID, key); }
     catch (e) { return defaultValue; }
 }
-
-// -----------------------------------
 
 const SKILL_DICTIONARY = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
 
@@ -289,43 +286,49 @@ function getLieString(qType, lie, otherText) {
     }
 }
 
-function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowledge = false) {
+function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowledge = false, disableColors = false) {
     if (!analysis) return "<em>No target selected.</em>";
     const { truths, lies } = analysis;
+
+    // Manage colors based on settings
+    const cCritSucc = disableColors ? '' : 'color:#008800;';
+    const cSucc = disableColors ? '' : 'color:#0055aa;';
+    const cFail = disableColors ? '' : 'color:#aa5500;';
+    const cCritFail = disableColors ? '' : 'color:#aa0000;';
 
     if (question === 'all') {
         let truthsHtml = `Weaknesses: ${truths.weaknesses.join(', ') || 'None'} <br>Immunities: ${truths.immunities.join(', ') || 'None'} <br>Saves: High ${truths.highestSave} / Low ${truths.lowestSave} <br>Abilities: ${truths.abilities.join(', ') || 'None'}`;
         let liesHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> Weakness: ${l.fakeWeakness}, Immunity: ${l.fakeImmunity}, High Save: ${l.fakeHighSave}, Low Save: ${l.fakeLowSave}, Ability: ${l.fakeAbility}</li>`).join('');
 
-        if (degree === 'Critical Success') return `<span style="color:#008800;"><b>Reveal Multiple (You are sure that...):</b><br>${truthsHtml}</span>`;
-        if (degree === 'Success') return `<span style="color:#0055aa;"><b>Reveal One (You think that...):</b><br>${truthsHtml}</span>`;
+        if (degree === 'Critical Success') return `<span style="${cCritSucc}"><b>Reveal Multiple (You are sure that...):</b><br>${truthsHtml}</span>`;
+        if (degree === 'Success') return `<span style="${cSucc}"><b>Reveal One (You think that...):</b><br>${truthsHtml}</span>`;
         if (degree === 'Failure') {
             if (hasDubiousKnowledge) {
-                return `<span style="color:#aa5500;"><b>Dubious Knowledge (You think that...):</b><br><br><b>True Info:</b><br>${truthsHtml}<br><br><b>False Info:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+                return `<span style="${cFail}"><b>Dubious Knowledge (You think that...):</b><br><br><b>True Info:</b><br>${truthsHtml}<br><br><b>False Info:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
             } else {
-                return `<span style="color:#aa5500;"><b>Failure:</b> You are not sure about this creature.</span>`;
+                return `<span style="${cFail}"><b>Failure:</b> You are not sure about this creature.</span>`;
             }
         }
-        if (degree === 'Critical Failure') return `<span style="color:#aa0000;"><b>Confident Falsehood (You are sure that...):</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+        if (degree === 'Critical Failure') return `<span style="${cCritFail}"><b>Confident Falsehood (You are sure that...):</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
         return "";
     }
 
     let truthAns = getTruthString(question, truths, otherText);
 
     if (degree === 'Critical Success') {
-        return `<span style="color:#008800;"><b>Tell them:</b> "You are sure that ${truthAns}."<br><em>(GM: Provide additional contextual information or a second fact.)</em></span>`;
+        return `<span style="${cCritSucc}"><b>Tell them:</b> "You are sure that ${truthAns}."<br><em>(GM: Provide additional contextual information or a second fact.)</em></span>`;
     } else if (degree === 'Success') {
-        return `<span style="color:#0055aa;"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
+        return `<span style="${cSucc}"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
     } else if (degree === 'Failure') {
         if (hasDubiousKnowledge) {
             const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-            return `<span style="color:#aa5500;"><b>Dubious Knowledge:</b><br><b>True Info:</b> ${truthAns}<br><br><b>False Info — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+            return `<span style="${cFail}"><b>Dubious Knowledge:</b><br><b>True Info:</b> ${truthAns}<br><br><b>False Info — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
         } else {
-            return `<span style="color:#aa5500;"><b>Failure:</b> You are not sure about this creature.</span>`;
+            return `<span style="${cFail}"><b>Failure:</b> You are not sure about this creature.</span>`;
         }
     } else if (degree === 'Critical Failure') {
         const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You are sure that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-        return `<span style="color:#aa0000;"><b>Confident Falsehood — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+        return `<span style="${cCritFail}"><b>Confident Falsehood — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
     }
     return "";
 }
@@ -334,13 +337,16 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000', 'Unknown': '#555555' };
     const hideBreakdown = getSetting('hideModifierBreakdown', false);
     const autoReplyOn = getSetting('autoReply', false);
+    const disableGMColors = getSetting('disableGMColors', false);
 
     let rows = '';
     for (const res of results) {
         const p = res.primary;
-        const color = colorMap[p.degree] || '#000000';
 
-        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText, res.hasDubiousKnowledge) : '<em>No target selected.</em>';
+        // Use grey layout if colors are disabled
+        const color = disableGMColors ? '#555555' : (colorMap[p.degree] || '#000000');
+
+        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText, res.hasDubiousKnowledge, disableGMColors) : '<em>No target selected.</em>';
         if (autoReplyOn && dc !== null && question !== 'all') {
             hintHtml += `<br><span style="color:#888; font-size:0.85em;"><em>(Auto-reply pushed to player)</em></span>`;
         }
@@ -350,7 +356,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
             relatedHtml = `<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #ccc; font-size: 0.85em; color: #444;">`;
             relatedHtml += `<strong>Related Skills:</strong><br>`;
             relatedHtml += res.related.map(r => {
-                const rColor = colorMap[r.degree] || '#000';
+                const rColor = disableGMColors ? '#555555' : (colorMap[r.degree] || '#000');
                 const breakdownStr = hideBreakdown ? '' : ` (${escapeHtml(r.breakdown)})`;
                 return `<span>${escapeHtml(r.label)}: <b>${r.total}</b>${breakdownStr} <span style="color:${rColor}; font-weight:bold;">[${r.degree}]</span></span>`;
             }).join(' <br>');
@@ -382,7 +388,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
     const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
 
-    const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} DC ${dc}` : `DC ${dc}`) : `Unknown DC`;
+    const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} <b style="color:#aa0000;">DC ${dc}</b>` : `<b style="color:#aa0000;">DC ${dc}</b>`) : `Unknown DC`;
     const bonusText = manualBonus !== 0 ? `<br><span style="color:#aa0000; font-size: 0.85em;">(Includes ${manualBonus > 0 ? '+' : ''}${manualBonus} manual modifier)</span>` : '';
 
     const title = creatureName
@@ -543,16 +549,17 @@ async function sendAutoReply(results, question, otherText, analysis) {
             <header class="card-header flexrow"><h4>Recall Knowledge Result</h4></header>
             <div class="card-content" style="font-family: 'Signika', sans-serif;">`;
 
+        // Strip inline colors so as not to metagame the success tier
         if (p.degree === 'Critical Success') {
             const categories = ['weaknesses', 'immunities', 'saves', 'abilities', 'attacks'].filter(c => c !== question);
             const extraCat = categories[Math.floor(Math.random() * categories.length)];
 
             html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
-            html += `<p style="color:#008800;"><b>Primary Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
-            html += `<p style="color:#008800;"><b>Bonus Info:</b> ${getTruthString(extraCat, truths, otherText)}</p>`;
+            html += `<p><b>Primary Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
+            html += `<p><b>Bonus Info:</b> ${getTruthString(extraCat, truths, otherText)}</p>`;
         } else if (p.degree === 'Success') {
             html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
-            html += `<p style="color:#0055aa;"><b>Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
+            html += `<p><b>Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
         } else if (p.degree === 'Failure') {
             if (hasDubious) {
                 const chosenName = Math.random() > 0.5 ? analysis.name : lie.fakeName;
@@ -562,13 +569,13 @@ async function sendAutoReply(results, question, otherText, analysis) {
                 ].sort(() => Math.random() - 0.5);
 
                 html += `<p>You think this might be a <b>${escapeHtml(chosenName)}</b>, but your memory is hazy. You recall two conflicting pieces of information:</p>`;
-                html += `<ul style="color:#aa5500;">${arr.join('')}</ul>`;
+                html += `<ul>${arr.join('')}</ul>`;
             } else {
-                html += `<p style="color:#aa5500;">You rack your brain, but fail to recall any useful information about this creature.</p>`;
+                html += `<p>You rack your brain, but fail to recall any useful information about this creature.</p>`;
             }
         } else if (p.degree === 'Critical Failure') {
             html += `<p>You are certain this is a <b>${escapeHtml(lie.fakeName)}</b>.</p>`;
-            html += `<p style="color:#aa0000;"><b>Info:</b> ${getLieString(question, lie, otherText)}</p>`;
+            html += `<p><b>Info:</b> ${getLieString(question, lie, otherText)}</p>`;
         } else {
             html += `<p>Result unknown.</p>`;
         }

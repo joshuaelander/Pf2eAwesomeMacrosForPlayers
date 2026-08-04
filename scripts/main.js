@@ -174,6 +174,12 @@ export function registerSettings() {
         hint: 'Automatically whispers the result to the rolling player based on their degree of success.',
         scope: 'world', config: true, type: Boolean, default: false
     });
+
+    game.settings.register(MODULE_ID, 'disableGMColors', {
+        name: 'Disable Colors in GM Results',
+        hint: 'If enabled, removes the success/failure color coding from the GM chat card to prevent accidental screen-peek metagaming.',
+        scope: 'world', config: true, type: Boolean, default: false
+    });
 }
 
 // --- HOOKS --- //
