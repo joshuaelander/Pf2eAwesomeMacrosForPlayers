@@ -14,7 +14,6 @@ import {
     openRecallKnowledgeDialog,
     ENHANCED_RECALL_MACRO_NAME,
     ENHANCED_RECALL_MACRO_ICON,
-    registerSettings,
 } from "./enhanced-recall-knowledge.js";
 
 import {
@@ -66,13 +65,7 @@ const DESIRED_MACROS = [
     { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();` }
 ];
 
-// Hook to handle the "Create Actor" button on the chat card for players
-Hooks.on("renderChatMessage", (message, html, data) => {
-    handlePlayerCreateButton(message, html, data);
-});
-
 // --- HELPER FUNCTIONS --- //
-
 /**
  * Gets an existing folder by name and type, or creates it if it doesn't exist.
  */
@@ -156,9 +149,41 @@ async function syncMacros() {
     }
 }
 
+// --- MODULE SETTINGS INTEGRATION ---
+export function registerSettings() {
+    game.settings.register(MODULE_ID, 'hideModifierBreakdown', {
+        name: 'Hide Modifier Breakdown',
+        hint: 'If enabled, hides the math breakdown (e.g., 10+6) in the GM chat card.',
+        scope: 'world', config: true, type: Boolean, default: false
+    });
+
+    game.settings.register(MODULE_ID, 'failureBehavior', {
+        name: 'Failure Behavior',
+        hint: 'How should normal Failures be handled regarding Dubious Knowledge?',
+        scope: 'world', config: true, type: String,
+        choices: {
+            'failureOnly': 'Failure Only (Never use Dubious Knowledge)',
+            'dubiousKnowledge': 'RAW (Only if actor has Dubious Knowledge feat)',
+            'alwaysDubious': 'Always use Dubious Knowledge'
+        },
+        default: 'dubiousKnowledge'
+    });
+
+    game.settings.register(MODULE_ID, 'autoReply', {
+        name: 'Auto-Reply to Player',
+        hint: 'Automatically whispers the result to the rolling player based on their degree of success.',
+        scope: 'world', config: true, type: Boolean, default: false
+    });
+}
+
 // --- HOOKS --- //
 Hooks.once('init', () => {
     registerSettings();
+});
+
+// Hook to handle the "Create Actor" button on the chat card for players
+Hooks.on("renderChatMessage", (message, html, data) => {
+    handlePlayerCreateButton(message, html, data);
 });
 
 // Global variable for our socket

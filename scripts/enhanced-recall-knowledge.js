@@ -22,36 +22,11 @@ export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/documents/blueprint-re
 // --- MODULE SETTINGS INTEGRATION ---
 const MODULE_ID = "pf2e-awesome-macros-for-players";
 
-export function registerSettings() {
-    game.settings.register(MODULE_ID, 'hideModifierBreakdown', {
-        name: 'Hide Modifier Breakdown',
-        hint: 'If enabled, hides the math breakdown (e.g., 10+6) in the GM chat card.',
-        scope: 'world', config: true, type: Boolean, default: false
-    });
-
-    game.settings.register(MODULE_ID, 'failureBehavior', {
-        name: 'Failure Behavior',
-        hint: 'How should normal Failures be handled regarding Dubious Knowledge?',
-        scope: 'world', config: true, type: String,
-        choices: {
-            'failureOnly': 'Failure Only (Never use Dubious Knowledge)',
-            'dubiousKnowledge': 'RAW (Only if actor has Dubious Knowledge feat)',
-            'alwaysDubious': 'Always use Dubious Knowledge'
-        },
-        default: 'dubiousKnowledge'
-    });
-
-    game.settings.register(MODULE_ID, 'autoReply', {
-        name: 'Auto-Reply to Player',
-        hint: 'Automatically whispers the result to the rolling player based on their degree of success.',
-        scope: 'world', config: true, type: Boolean, default: false
-    });
-}
-
 function getSetting(key, defaultValue) {
     try { return game.settings.get(MODULE_ID, key); }
     catch (e) { return defaultValue; }
 }
+
 // -----------------------------------
 
 const SKILL_DICTIONARY = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
@@ -338,7 +313,7 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
     let truthAns = getTruthString(question, truths, otherText);
 
     if (degree === 'Critical Success') {
-        return `<span style="color:#008800;"><b>Tell them:</b> "You are sure that ${truthAns}."<br><em>(GM: Provide additional contextual information or a second fact as appropriate!)</em></span>`;
+        return `<span style="color:#008800;"><b>Tell them:</b> "You are sure that ${truthAns}."<br><em>(GM: Provide additional contextual information or a second fact.)</em></span>`;
     } else if (degree === 'Success') {
         return `<span style="color:#0055aa;"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
     } else if (degree === 'Failure') {
