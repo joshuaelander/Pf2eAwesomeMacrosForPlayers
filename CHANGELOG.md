@@ -1,7 +1,9 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
-8/4/2026 - Version 1.3.9 - Added a slider to add a bonus modifier to the enhanced recall knowledge. Also check for dubious knowledge now. \
+8/4/2024 - Version 1.4.0 - Added some options in the module settings to allow auto-reply to players or adjust some GM preferences. Still a bit Alpha. \
+\
+8/3/2026 - Version 1.3.9 - Added a slider to add a bonus modifier to the enhanced recall knowledge. Also check for dubious knowledge now. \
 \
 8/2/2026 - Version 1.3.8 - Added mastermind macro. Fixed some UI formatting and weirdness. \
 \
