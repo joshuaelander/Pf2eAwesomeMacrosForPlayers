@@ -133,7 +133,7 @@ async function analyzeCreature(targetActor) {
     };
 
     const getFakeHighestSave = (realHighest) => realHighest === 'Fortitude' ? 'Reflex' : (realHighest === 'Reflex' ? 'Will' : 'Fortitude');
-    const getFakeLowestSave = (realLowest) => realLowest === 'Fortitude' ? 'Will' : (realLowest === 'Reflex' ? 'Fortitude' : 'Reflex');
+    const getFakeLowestSave = (realLowest) => realLowest === 'Fortitude' ? 'Reflex' : (realLowest === 'Reflex' ? 'Will' : 'Fortitude');
 
     let baseFakeWeakness = getFakeType(realWeaknesses);
     let baseFakeImmunity = getFakeType(realImmunities);
@@ -288,7 +288,7 @@ function getLieString(qType, lie, otherText) {
 
 function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowledge = false, disableColors = false) {
     if (!analysis) return "<em>No target selected.</em>";
-    const { truths, lies } = analysis;
+    const { truths, lies, name } = analysis;
 
     // Manage colors based on settings
     const cCritSucc = disableColors ? '' : 'color:#008800;';
@@ -296,20 +296,57 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
     const cFail = disableColors ? '' : 'color:#aa5500;';
     const cCritFail = disableColors ? '' : 'color:#aa0000;';
 
-    if (question === 'all') {
-        let truthsHtml = `Weaknesses: ${truths.weaknesses.join(', ') || 'None'} <br>Immunities: ${truths.immunities.join(', ') || 'None'} <br>Saves: High ${truths.highestSave} / Low ${truths.lowestSave} <br>Abilities: ${truths.abilities.join(', ') || 'None'}`;
-        let liesHtml = lies.map(l => `<li style="margin-bottom:2px;"><b>${l.fakeName}:</b> Weakness: ${l.fakeWeakness}, Immunity: ${l.fakeImmunity}, High Save: ${l.fakeHighSave}, Low Save: ${l.fakeLowSave}, Ability: ${l.fakeAbility}</li>`).join('');
+    const trueBg = disableColors ? 'rgba(0,0,0,0.03)' : 'rgba(0, 100, 0, 0.03)';
+    const falseBg = disableColors ? 'rgba(0,0,0,0.03)' : 'rgba(100, 0, 0, 0.03)';
+    const trueLabel = disableColors ? 'inherit' : '#006600';
+    const falseLabel = disableColors ? 'inherit' : '#990000';
 
-        if (degree === 'Critical Success') return `<span style="${cCritSucc}"><b>Reveal Multiple (You are sure that...):</b><br>${truthsHtml}</span>`;
-        if (degree === 'Success') return `<span style="${cSucc}"><b>Reveal One (You think that...):</b><br>${truthsHtml}</span>`;
+    if (question === 'all') {
+        const buildGrid = (title, w, i, hs, ls, a) => `
+            <div style="margin-top: 4px;">
+                <div style="font-weight: bold; border-bottom: 1px solid rgba(0,0,0,0.2); margin-bottom: 4px; padding-bottom: 2px;">${escapeHtml(title)}</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 0.95em; line-height: 1.2;">
+                    <div><b style="color:#444;">Weak:</b> ${escapeHtml(w)}</div>
+                    <div><b style="color:#444;">Immune:</b> ${escapeHtml(i)}</div>
+                    <div><b style="color:#444;">High Save:</b> ${escapeHtml(hs)}</div>
+                    <div><b style="color:#444;">Low Save:</b> ${escapeHtml(ls)}</div>
+                    <div style="grid-column: span 2;"><b style="color:#444;">Ability:</b> ${escapeHtml(a)}</div>
+                </div>
+            </div>`;
+
+        let truthsHtml = buildGrid(
+            name,
+            truths.weaknesses.join(', ') || 'None',
+            truths.immunities.join(', ') || 'None',
+            truths.highestSave,
+            truths.lowestSave,
+            truths.abilities.join(', ') || 'None'
+        );
+
+        let liesHtml = lies.map((l, idx) => `
+            ${idx > 0 ? '<div style="margin-top: 8px; padding-top: 4px; border-top: 1px dashed rgba(0,0,0,0.2);">' : '<div>'}
+            ${buildGrid(l.fakeName, l.fakeWeakness, l.fakeImmunity, l.fakeHighSave, l.fakeLowSave, l.fakeAbility)}
+            </div>
+        `).join('');
+
+        if (degree === 'Critical Success') return `<span style="${cCritSucc}"><b>Reveal Multiple (You are sure that...):</b></span>${truthsHtml}`;
+        if (degree === 'Success') return `<span style="${cSucc}"><b>Reveal One (You think that...):</b></span>${truthsHtml}`;
         if (degree === 'Failure') {
             if (hasDubiousKnowledge) {
-                return `<span style="${cFail}"><b>Dubious Knowledge (You think that...):</b><br><br><b>True Info:</b><br>${truthsHtml}<br><br><b>False Info:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+                return `<span style="${cFail}"><b>Dubious Knowledge (You think that...):</b></span>
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px; color: #222;">
+                    <div style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; background: ${trueBg};">
+                        <b style="color: ${trueLabel};">True Info:</b>${truthsHtml}
+                    </div>
+                    <div style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; background: ${falseBg};">
+                        <b style="color: ${falseLabel};">False Info Options:</b>${liesHtml}
+                    </div>
+                </div>`;
             } else {
                 return `<span style="${cFail}"><b>Failure:</b> You are not sure about this creature.</span>`;
             }
         }
-        if (degree === 'Critical Failure') return `<span style="${cCritFail}"><b>Confident Falsehood (You are sure that...):</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${liesHtml}</ul></span>`;
+        if (degree === 'Critical Failure') return `<span style="${cCritFail}"><b>Confident Falsehood (You are sure that...):</b></span><br>${liesHtml}`;
         return "";
     }
 
@@ -321,14 +358,23 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
         return `<span style="${cSucc}"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
     } else if (degree === 'Failure') {
         if (hasDubiousKnowledge) {
-            const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-            return `<span style="${cFail}"><b>Dubious Knowledge:</b><br><b>True Info:</b> ${truthAns}<br><br><b>False Info — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+            const optionsHtml = lies.map(l => `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.1);">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></div>`).join('');
+            const trueHtml = `You think that ${truthAns}.`;
+            return `<span style="${cFail}"><b>Dubious Knowledge:</b></span>
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px; color: #222;">
+                <div style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; background: ${trueBg};">
+                    <b style="color: ${trueLabel};">True Info:</b><br>${trueHtml}
+                </div>
+                <div style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; background: ${falseBg};">
+                    <b style="color: ${falseLabel};">False Info Options:</b>${optionsHtml}
+                </div>
+            </div>`;
         } else {
             return `<span style="${cFail}"><b>Failure:</b> You are not sure about this creature.</span>`;
         }
     } else if (degree === 'Critical Failure') {
-        const optionsHtml = lies.map(l => `<li style="margin-bottom:4px;">"You are sure that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></li>`).join('');
-        return `<span style="${cCritFail}"><b>Confident Falsehood — Pick what to tell them:</b><ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">${optionsHtml}</ul></span>`;
+        const optionsHtml = lies.map(l => `<div style="margin-top: 4px;">"You are sure that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></div>`).join('');
+        return `<span style="${cCritFail}"><b>Confident Falsehood — Pick what to tell them:</b>${optionsHtml}</span>`;
     }
     return "";
 }
