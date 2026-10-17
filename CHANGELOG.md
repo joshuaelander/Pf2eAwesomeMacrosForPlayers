@@ -1,6 +1,10 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+10/17/2026 - Version 1.4.4 - Added Flurry of Blows macro for Monks with MAP progression, outcome confirmation, and combined damage calculation. \
+\
+10/17/2026 - Version 1.4.3 - Updated Mastermind Rogues Recall macro for Mastermind Rogues with Mastermind's Assessment and Off-Guard. \
+\
 8/4/2026 - Version 1.4.2 - Tried to clean up the formatting for dubious knowledge a bit to make it easier to read. \
 \
 8/4/2026 - Version 1.4.0 - Added some options in the module settings to allow auto-reply to players or adjust some GM preferences. Still a bit Alpha. \

@@ -53,6 +53,12 @@ import {
     applyMastermindOffGuardAsGM
 } from "./mastermind-rogues-recall.js";
 
+import {
+    executeFlurryOfBlows,
+    FLURRY_OF_BLOWS_MACRO_NAME,
+    FLURRY_OF_BLOWS_MACRO_ICON
+} from "./flurry-of-blows.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();` },
@@ -62,7 +68,8 @@ const DESIRED_MACROS = [
     { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();` },
     { name: COMBAT_ASSESSMENT_MACRO_NAME, icon: COMBAT_ASSESSMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeCombatAssessment();` },
     { name: MAGUS_ANALYSIS_MACRO_NAME, icon: MAGUS_ANALYSIS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMagusAnalysis();` },
-    { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();` }
+    { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();` },
+    { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();` }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -211,6 +218,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeCombatAssessment = executeCombatAssessment;
     game.pf2eAwesomePlayerMacros.executeMagusAnalysis = executeMagusAnalysis;
     game.pf2eAwesomePlayerMacros.mastermindRecall = mastermindRecall;
+    game.pf2eAwesomePlayerMacros.executeFlurryOfBlows = executeFlurryOfBlows;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {

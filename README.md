@@ -19,6 +19,8 @@ Also , if you have any special lores, it will suggest the best one to use based 
 
 7.) Combat assessment macro to do a strike and then call the enhanced recall knowledge macro to assess the target on a hit.
 
+8.) Flurry of Blows for monk to call the flurry of blows action.
+
 If you'd like you can help support me over on Patreon to see this and many other fun tools, maps, etc related to PF2e. Linked here: https://patreon.com/AeneasPF2e
 
 Author: Aeneas (Joshua Elander)
