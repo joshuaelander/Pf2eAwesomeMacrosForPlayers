@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+10/17/2026 - Version 1.4.5 - Updated Flurry of Blows MAP options to display 'No MAP, MAP -5, MAP -10' with live character sheet bonuses and agile penalties. Added PF2e Toolbelt as optional recommended dependency. \
+\
 10/17/2026 - Version 1.4.4 - Added Flurry of Blows macro for Monks with MAP progression, outcome confirmation, and combined damage calculation. \
 \
 10/17/2026 - Version 1.4.3 - Updated Mastermind Rogues Recall macro for Mastermind Rogues with Mastermind's Assessment and Off-Guard. \

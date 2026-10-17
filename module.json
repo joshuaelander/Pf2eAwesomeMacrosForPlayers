@@ -1,7 +1,7 @@
 {
   "id": "pf2e-awesome-macros-for-players",
   "title": "PF2e Awesome Macros for Players",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -18,6 +18,13 @@
       {
         "id": "socketlib",
         "type": "module"
+      }
+    ],
+    "recommends": [
+      {
+        "id": "pf2e-toolbelt",
+        "type": "module",
+        "reason": "Enables Target Helper to show targeted damage application buttons directly on chat cards."
       }
     ]
   },

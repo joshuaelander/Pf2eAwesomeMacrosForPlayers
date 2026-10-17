@@ -110,13 +110,16 @@ export async function executeFlurryOfBlows() {
                     ${strikeOptionsHtml}
                 </select>
             </div>
-            <div style="margin-bottom: 12px;">
+            <div style="margin-bottom: 10px;">
                 <label style="font-weight: bold; display: block; margin-bottom: 4px;">Current Multiple Attack Penalty (Starting MAP):</label>
                 <select id="fob-starting-map" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #aaa;">
-                    <option value="0" selected>MAP 0 (No prior attacks: 1st attack at MAP 0, 2nd at MAP 1)</option>
-                    <option value="1">MAP 1 (1 prior attack: 1st attack at MAP 1, 2nd at MAP 2)</option>
-                    <option value="2">MAP 2 (2+ prior attacks: both attacks at MAP 2)</option>
+                    <option value="0" selected>No MAP</option>
+                    <option value="1">MAP -5</option>
+                    <option value="2">MAP -10</option>
                 </select>
+            </div>
+            <div id="fob-live-preview" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(0, 0, 0, 0.04); border-left: 3px solid #1976d2; border-radius: 3px; font-size: 0.9em;">
+                <div id="fob-preview-content"></div>
             </div>
             <p style="font-size: 0.85em; color: #555; margin: 0; font-style: italic;">
                 Flurry of Blows makes two strikes, progressing MAP normally. If both hit, their damage will be combined.
@@ -152,8 +155,68 @@ export async function executeFlurryOfBlows() {
                 }
             }
         },
-        default: "roll"
+        default: "roll",
+        render: (html) => {
+            const updateMapOptions = () => {
+                const s1Idx = parseInt(html.find("#fob-strike-1").val(), 10) || 0;
+                const s2Idx = parseInt(html.find("#fob-strike-2").val(), 10) || 0;
+                const chosen1 = availableStrikes[s1Idx] || availableStrikes[0];
+                const chosen2 = availableStrikes[s2Idx] || availableStrikes[0];
+
+                const s1Penalty1 = getStrikeMapPenalty(chosen1, 1);
+                const s1Penalty2 = getStrikeMapPenalty(chosen1, 2);
+                const s2Penalty1 = getStrikeMapPenalty(chosen2, 1);
+                const s2Penalty2 = getStrikeMapPenalty(chosen2, 2);
+
+                const s1Bonus0 = chosen1.variants?.[0]?.label ?? "+0";
+                const s1Bonus1 = chosen1.variants?.[1]?.label ?? `${s1Penalty1}`;
+                const s1Bonus2 = chosen1.variants?.[2]?.label ?? `${s1Penalty2}`;
+
+                const s2Bonus0 = chosen2.variants?.[0]?.label ?? "+0";
+                const s2Bonus1 = chosen2.variants?.[1]?.label ?? `${s2Penalty1}`;
+                const s2Bonus2 = chosen2.variants?.[2]?.label ?? `${s2Penalty2}`;
+
+                const opt0Text = `No MAP (No prior attacks: 1st [${s1Bonus0}], 2nd [${s2Bonus1} / MAP ${s2Penalty1}])`;
+                const opt1Text = `MAP ${s1Penalty1} (1 prior attack: 1st [${s1Bonus1} / MAP ${s1Penalty1}], 2nd [${s2Bonus2} / MAP ${s2Penalty2}])`;
+                const opt2Text = `MAP ${s1Penalty2} (2+ prior attacks: 1st [${s1Bonus2} / MAP ${s1Penalty2}], 2nd [${s2Bonus2} / MAP ${s2Penalty2}])`;
+
+                html.find("#fob-starting-map option[value='0']").text(opt0Text);
+                html.find("#fob-starting-map option[value='1']").text(opt1Text);
+                html.find("#fob-starting-map option[value='2']").text(opt2Text);
+
+                const chosenStartingMap = parseInt(html.find("#fob-starting-map").val(), 10) || 0;
+                const m1 = Math.min(chosenStartingMap, 2);
+                const m2 = Math.min(chosenStartingMap + 1, 2);
+
+                const b1 = chosen1.variants?.[m1]?.label ?? "+0";
+                const b2 = chosen2.variants?.[m2]?.label ?? "+0";
+
+                const p1Tag = m1 === 0 ? "No MAP" : `MAP ${getStrikeMapPenalty(chosen1, m1)}`;
+                const p2Tag = `MAP ${getStrikeMapPenalty(chosen2, m2)}`;
+
+                html.find("#fob-preview-content").html(`
+                    <div style="display: flex; justify-content: space-between; gap: 8px;">
+                        <span><strong>Attack 1:</strong> ${chosen1.label} (<strong>${b1}</strong>) <small style="color: #666;">[${p1Tag}]</small></span>
+                        <span><strong>Attack 2:</strong> ${chosen2.label} (<strong>${b2}</strong>) <small style="color: #666;">[${p2Tag}]</small></span>
+                    </div>
+                `);
+            };
+
+            updateMapOptions();
+            html.find("#fob-strike-1, #fob-strike-2, #fob-starting-map").on("change", updateMapOptions);
+        }
     }).render(true);
+}
+
+/**
+ * Calculates the MAP penalty value for a given strike and MAP index (0, 1, or 2).
+ */
+function getStrikeMapPenalty(strike, mapIndex) {
+    if (mapIndex === 0) return 0;
+    const traits = strike?.item?.system?.traits?.value ?? (strike?.item?.traits ? Array.from(strike.item.traits) : []);
+    const isAgile = traits.includes("agile");
+    if (mapIndex === 1) return isAgile ? -4 : -5;
+    return isAgile ? -8 : -10;
 }
 
 /**
@@ -177,6 +240,9 @@ function reassertTarget(targetToken) {
 async function runFlurrySequence(actor, token, target, strike1, strike2, startingMap) {
     const map1Index = Math.min(startingMap, 2);
     const map2Index = Math.min(startingMap + 1, 2);
+
+    const map1Tag = map1Index === 0 ? "No MAP" : `MAP ${getStrikeMapPenalty(strike1, map1Index)}`;
+    const map2Tag = `MAP ${getStrikeMapPenalty(strike2, map2Index)}`;
 
     // 1. Post Flurry of Blows Header to Chat
     const targetText = target ? ` against <strong>${target.name}</strong>` : "";
@@ -243,7 +309,7 @@ async function runFlurrySequence(actor, token, target, strike1, strike2, startin
         <div style="font-family: 'Signika', sans-serif;">
             <p style="margin-top: 0; font-size: 0.95em;">Confirm the outcomes of both attacks to roll damage:</p>
             <div style="margin-bottom: 10px; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 4px;">
-                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Strike 1: ${strike1.label}${strike1Summary}</label>
+                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Strike 1: ${strike1.label} [${map1Tag}]${strike1Summary}</label>
                 <select id="fob-outcome-1" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #aaa;">
                     <option value="miss" ${detected1 === "miss" ? "selected" : ""}>Miss</option>
                     <option value="hit" ${detected1 === "hit" ? "selected" : ""}>Hit</option>
@@ -251,7 +317,7 @@ async function runFlurrySequence(actor, token, target, strike1, strike2, startin
                 </select>
             </div>
             <div style="margin-bottom: 12px; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 4px;">
-                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Strike 2: ${strike2.label}${strike2Summary}</label>
+                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Strike 2: ${strike2.label} [${map2Tag}]${strike2Summary}</label>
                 <select id="fob-outcome-2" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #aaa;">
                     <option value="miss" ${detected2 === "miss" ? "selected" : ""}>Miss</option>
                     <option value="hit" ${detected2 === "hit" ? "selected" : ""}>Hit</option>
@@ -276,7 +342,7 @@ async function runFlurrySequence(actor, token, target, strike1, strike2, startin
                     const outcome1 = html.find("#fob-outcome-1").val();
                     const outcome2 = html.find("#fob-outcome-2").val();
 
-                    await resolveFlurryDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg);
+                    await resolveFlurryDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg, startingMap);
                 }
             }
         },
@@ -287,7 +353,7 @@ async function runFlurrySequence(actor, token, target, strike1, strike2, startin
 /**
  * Rolls damage for each hit and combines them if both attacks succeeded.
  */
-async function resolveFlurryDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg) {
+async function resolveFlurryDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg, startingMap = 0) {
     const hit1 = outcome1 !== "miss";
     const hit2 = outcome2 !== "miss";
 
@@ -330,10 +396,10 @@ async function resolveFlurryDamage(actor, token, target, strike1, strike2, outco
                 <div class="pf2e chat-card">
                     <header class="card-header flexrow">
                         <img src="${FLURRY_OF_BLOWS_MACRO_ICON}" width="36" height="36" style="border:none; margin-right:5px;"/>
-                        <h3>Flurry of Blows - Complete</h3>
+                        <h3>Flurry of Blows</h3>
                     </header>
                     <div class="card-content">
-                        <p><em>Both strikes of Flurry of Blows missed. No damage dealt.</em></p>
+                        <p><em>Both strikes of Flurry of Blows missed.</em></p>
                     </div>
                 </div>
             `
@@ -395,8 +461,13 @@ async function resolveFlurryDamage(actor, token, target, strike1, strike2, outco
     const combinedFormula = formulaParts.join(", ");
     const totalDamage = Object.values(combinedByType).reduce((a, b) => a + b, 0);
 
-    const breakdown1 = `${strike1.label} (${outcome1 === "crit" ? "Critical Hit" : "Hit"}): ${roll1?.total ?? 0}`;
-    const breakdown2 = `${strike2.label} (${outcome2 === "crit" ? "Critical Hit" : "Hit"}): ${roll2?.total ?? 0}`;
+    const map1Index = Math.min(startingMap, 2);
+    const map2Index = Math.min(startingMap + 1, 2);
+    const map1Tag = map1Index === 0 ? "No MAP" : `MAP ${getStrikeMapPenalty(strike1, map1Index)}`;
+    const map2Tag = `MAP ${getStrikeMapPenalty(strike2, map2Index)}`;
+
+    const breakdown1 = `${strike1.label} (${outcome1 === "crit" ? "Critical Hit" : "Hit"}, ${map1Tag}): ${roll1?.total ?? 0}`;
+    const breakdown2 = `${strike2.label} (${outcome2 === "crit" ? "Critical Hit" : "Hit"}, ${map2Tag}): ${roll2?.total ?? 0}`;
 
     // Target information extraction for flags and display
     reassertTarget(target);
