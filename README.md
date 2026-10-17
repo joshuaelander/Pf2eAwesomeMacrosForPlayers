@@ -19,9 +19,11 @@ Also , if you have any special lores, it will suggest the best one to use based 
 
 7.) Combat assessment macro to do a strike and then call the enhanced recall knowledge macro to assess the target on a hit.
 
-8.) Flurry of Blows for monk to call the flurry of blows action.
+8.) Mastermind Rogue macro for setting off-guard on success or critical success of recall knowledge.
+
+9.) Flurry of Blows for monk to call the flurry of blows action.
  
-9.) Hunted Shot for ranger to perform two ranged strikes against their hunted prey, progressing MAP normally and combining damage on hits.
+10.) Hunted Shot for ranger to perform two ranged strikes against their hunted prey, progressing MAP normally and combining damage on hits.
 
 If you'd like you can help support me over on Patreon to see this and many other fun tools, maps, etc related to PF2e. Linked here: https://patreon.com/AeneasPF2e
 
