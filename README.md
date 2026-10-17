@@ -1,5 +1,5 @@
 # Pf2e Awesome Macros For Players
-Overview: A repo with more useful macros, this time for players to use!
+Overview: A repo with more useful macros for the Pathfinder2e system, this time for players to use!
 
 Contents: \
 1.) Enhanced Recall Knowledge Macro for rolling recall knowledge, asking which skill to use and what question you want to ask. 
