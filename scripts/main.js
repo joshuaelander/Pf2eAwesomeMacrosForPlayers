@@ -324,10 +324,10 @@ Hooks.once('ready', async () => {
         }
     };
 
-    game.pf2eAwesomePlayerMacros.applyMastermindOffGuard = async (targetActorUuid, durationValue) => {
+    game.pf2eAwesomePlayerMacros.applyMastermindOffGuard = async (targetActorUuid, durationValue, sourceActorUuid) => {
         if (!playerModuleSocket) return false;
         try {
-            return await playerModuleSocket.executeAsGM("applyMastermindOffGuard", targetActorUuid, durationValue);
+            return await playerModuleSocket.executeAsGM("applyMastermindOffGuard", targetActorUuid, durationValue, sourceActorUuid);
         } catch (error) {
             if (error.name === "SocketlibNoGMConnectedError") {
                 ui.notifications.error("A Game Master must be online to apply the Mastermind effect.");
