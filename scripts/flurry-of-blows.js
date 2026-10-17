@@ -176,9 +176,9 @@ export async function executeFlurryOfBlows() {
                 const s2Bonus1 = chosen2.variants?.[1]?.label ?? `${s2Penalty1}`;
                 const s2Bonus2 = chosen2.variants?.[2]?.label ?? `${s2Penalty2}`;
 
-                const opt0Text = `No MAP (No prior attacks: 1st [${s1Bonus0}], 2nd [${s2Bonus1} / MAP ${s2Penalty1}])`;
-                const opt1Text = `MAP ${s1Penalty1} (1 prior attack: 1st [${s1Bonus1} / MAP ${s1Penalty1}], 2nd [${s2Bonus2} / MAP ${s2Penalty2}])`;
-                const opt2Text = `MAP ${s1Penalty2} (2+ prior attacks: 1st [${s1Bonus2} / MAP ${s1Penalty2}], 2nd [${s2Bonus2} / MAP ${s2Penalty2}])`;
+                const opt0Text = `No MAP (No prior attacks: 1st [${s1Bonus0}], 2nd [${s2Bonus1}])`;
+                const opt1Text = `MAP ${s1Penalty1} (1 prior attack: 1st [${s1Bonus1}], 2nd [${s2Bonus2}])`;
+                const opt2Text = `MAP ${s1Penalty2} (2+ prior attacks: 1st [${s1Bonus2}], 2nd [${s2Bonus2}])`;
 
                 html.find("#fob-starting-map option[value='0']").text(opt0Text);
                 html.find("#fob-starting-map option[value='1']").text(opt1Text);
@@ -196,8 +196,8 @@ export async function executeFlurryOfBlows() {
 
                 html.find("#fob-preview-content").html(`
                     <div style="display: flex; justify-content: space-between; gap: 8px;">
-                        <span><strong>Attack 1:</strong> ${chosen1.label} (<strong>${b1}</strong>) <small style="color: #666;">[${p1Tag}]</small></span>
-                        <span><strong>Attack 2:</strong> ${chosen2.label} (<strong>${b2}</strong>) <small style="color: #666;">[${p2Tag}]</small></span>
+                        <span><strong>Attack 1:</strong> ${chosen1.label} (<strong>${b1}</strong>) <br><small style="color: #666;">[${p1Tag}]</small></span>
+                        <span><strong>Attack 2:</strong> ${chosen2.label} (<strong>${b2}</strong>) <br><small style="color: #666;">[${p2Tag}]</small></span>
                     </div>
                 `);
             };

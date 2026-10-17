@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+10/17/2026 - Version 1.4.6 - Added Hunted Shot macro for Rangers to perform two ranged strikes against their hunted prey, progressing MAP normally and combining damage on hits. Reminds player if Hunt Prey is not active without blocking execution. \
+\
 10/17/2026 - Version 1.4.5 - Updated Flurry of Blows MAP options to display 'No MAP, MAP -5, MAP -10' with live character sheet bonuses and agile penalties. Added PF2e Toolbelt as optional recommended dependency. \
 \
 10/17/2026 - Version 1.4.4 - Added Flurry of Blows macro for Monks with MAP progression, outcome confirmation, and combined damage calculation. \
