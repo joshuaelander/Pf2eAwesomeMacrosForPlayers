@@ -83,6 +83,12 @@ import {
     DOUBLE_SLICE_MACRO_ICON
 } from "./double-slice.js";
 
+import {
+    executeTwinFeint,
+    TWIN_FEINT_MACRO_NAME,
+    TWIN_FEINT_MACRO_ICON
+} from "./twin-feint.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -102,7 +108,8 @@ const DESIRED_MACROS = [
     // Combat Subfolder
     { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();`, category: "Combat" },
     { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();`, category: "Combat" },
-    { name: DOUBLE_SLICE_MACRO_NAME, icon: DOUBLE_SLICE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeDoubleSlice();`, category: "Combat" }
+    { name: DOUBLE_SLICE_MACRO_NAME, icon: DOUBLE_SLICE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeDoubleSlice();`, category: "Combat" },
+    { name: TWIN_FEINT_MACRO_NAME, icon: TWIN_FEINT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinFeint();`, category: "Combat" }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -307,6 +314,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.openPartyStash = openPartyStash;
     game.pf2eAwesomePlayerMacros.executeInstructiveStrike = executeInstructiveStrike;
     game.pf2eAwesomePlayerMacros.executeDoubleSlice = executeDoubleSlice;
+    game.pf2eAwesomePlayerMacros.executeTwinFeint = executeTwinFeint;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
