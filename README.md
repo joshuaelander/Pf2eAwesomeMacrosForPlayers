@@ -26,6 +26,8 @@ Also , if you have any special lores, it will suggest the best one to use based 
 10.) Hunted Shot for ranger to perform two ranged strikes against their hunted prey, progressing MAP normally and combining damage on hits.
  
 11.) Open Party Stash for players to quickly open the shared party stash / inventory tab with one click.
+ 
+12.) Instructive Strike for thaumaturge to make a strike and trigger Enhanced Recall Knowledge on a hit, gaining a +2 circumstance bonus on a critical hit.
 
 If you'd like you can help support me over on Patreon to see this and many other fun tools, maps, etc related to PF2e. Linked here: https://patreon.com/AeneasPF2e
 

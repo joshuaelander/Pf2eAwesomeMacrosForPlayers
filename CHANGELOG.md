@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+10/24/2026 - Version 1.4.9 - Added Instructive Strike macro for Thaumaturges to Strike an enemy and immediately Recall Knowledge on a hit, granting a +2 circumstance bonus on a critical hit. \
+\
 10/24/2026 - Version 1.4.8 - Fixed macro icon path for Open Party Stash. \
 \
 10/24/2026 - Version 1.4.7 - Added Open Party Stash macro to easily open the active party sheet directly to the Stash (inventory) tab with a single click. \

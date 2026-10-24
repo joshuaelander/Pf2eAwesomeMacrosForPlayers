@@ -71,6 +71,12 @@ import {
     OPEN_PARTY_STASH_MACRO_ICON
 } from "./open-party-stash.js";
 
+import {
+    executeInstructiveStrike,
+    INSTRUCTIVE_STRIKE_MACRO_NAME,
+    INSTRUCTIVE_STRIKE_MACRO_ICON
+} from "./instructive-strike.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();` },
@@ -83,7 +89,8 @@ const DESIRED_MACROS = [
     { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();` },
     { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();` },
     { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();` },
-    { name: OPEN_PARTY_STASH_MACRO_NAME, icon: OPEN_PARTY_STASH_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openPartyStash();` }
+    { name: OPEN_PARTY_STASH_MACRO_NAME, icon: OPEN_PARTY_STASH_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openPartyStash();` },
+    { name: INSTRUCTIVE_STRIKE_MACRO_NAME, icon: INSTRUCTIVE_STRIKE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeInstructiveStrike();` }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -235,6 +242,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeFlurryOfBlows = executeFlurryOfBlows;
     game.pf2eAwesomePlayerMacros.executeHuntedShot = executeHuntedShot;
     game.pf2eAwesomePlayerMacros.openPartyStash = openPartyStash;
+    game.pf2eAwesomePlayerMacros.executeInstructiveStrike = executeInstructiveStrike;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
