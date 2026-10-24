@@ -1,6 +1,12 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+10/24/2026 - Version 1.5.2 - Enhanced macro synchronization to guarantee existing macros are matched and updated in-place without altering their document IDs, ensuring player hotbars remain intact. \
+\
+10/24/2026 - Version 1.5.1 - Fixed subfolder nesting in Foundry VTT so 'Recall Knowledge' and 'Combat' are placed inside the main module folder. \
+\
+10/24/2026 - Version 1.5.0 - Added Double Slice macro for dual-wielding characters with agile auto-sorting to the secondary weapon, non-agile penalty calculation (-2), and combined damage. Reorganized macros into 'Recall Knowledge' and 'Combat' subfolders. \
+\
 10/24/2026 - Version 1.4.9 - Added Instructive Strike macro for Thaumaturges to Strike an enemy and immediately Recall Knowledge on a hit, granting a +2 circumstance bonus on a critical hit. \
 \
 10/24/2026 - Version 1.4.8 - Fixed macro icon path for Open Party Stash. \

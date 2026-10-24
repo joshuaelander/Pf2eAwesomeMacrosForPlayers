@@ -77,59 +77,117 @@ import {
     INSTRUCTIVE_STRIKE_MACRO_ICON
 } from "./instructive-strike.js";
 
+import {
+    executeDoubleSlice,
+    DOUBLE_SLICE_MACRO_NAME,
+    DOUBLE_SLICE_MACRO_ICON
+} from "./double-slice.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
-    { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();` },
-    { name: ENHANCED_RECALL_MACRO_NAME, icon: ENHANCED_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();` },
-    { name: EXPLORATION_ACTIVITY_MACRO_NAME, icon: EXPLORATION_ACTIVITY_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.addExplorationActivity();` },
-    { name: MONSTER_HUNTER_MACRO_NAME, icon: MONSTER_HUNTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMonsterHunter();` },
-    { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();` },
-    { name: COMBAT_ASSESSMENT_MACRO_NAME, icon: COMBAT_ASSESSMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeCombatAssessment();` },
-    { name: MAGUS_ANALYSIS_MACRO_NAME, icon: MAGUS_ANALYSIS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMagusAnalysis();` },
-    { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();` },
-    { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();` },
-    { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();` },
-    { name: OPEN_PARTY_STASH_MACRO_NAME, icon: OPEN_PARTY_STASH_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openPartyStash();` },
-    { name: INSTRUCTIVE_STRIKE_MACRO_NAME, icon: INSTRUCTIVE_STRIKE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeInstructiveStrike();` }
+    // General / Utility Macros (Root folder)
+    { name: ROLL_RANDOM_CHARACTER_MACRO_NAME, icon: ROLL_RANDOM_CHARACTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.createCharacter();`, category: null },
+    { name: EXPLORATION_ACTIVITY_MACRO_NAME, icon: EXPLORATION_ACTIVITY_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.addExplorationActivity();`, category: null },
+    { name: OPEN_PARTY_STASH_MACRO_NAME, icon: OPEN_PARTY_STASH_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openPartyStash();`, category: null },
+
+    // Recall Knowledge Subfolder
+    { name: ENHANCED_RECALL_MACRO_NAME, icon: ENHANCED_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog();`, category: "Recall Knowledge" },
+    { name: MONSTER_HUNTER_MACRO_NAME, icon: MONSTER_HUNTER_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMonsterHunter();`, category: "Recall Knowledge" },
+    { name: KNOWN_WEAKNESSES_MACRO_NAME, icon: KNOWN_WEAKNESSES_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeKnownWeaknesses();`, category: "Recall Knowledge" },
+    { name: COMBAT_ASSESSMENT_MACRO_NAME, icon: COMBAT_ASSESSMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeCombatAssessment();`, category: "Recall Knowledge" },
+    { name: MAGUS_ANALYSIS_MACRO_NAME, icon: MAGUS_ANALYSIS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMagusAnalysis();`, category: "Recall Knowledge" },
+    { name: MASTERMIND_RECALL_MACRO_NAME, icon: MASTERMIND_RECALL_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.mastermindRecall();`, category: "Recall Knowledge" },
+    { name: INSTRUCTIVE_STRIKE_MACRO_NAME, icon: INSTRUCTIVE_STRIKE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeInstructiveStrike();`, category: "Recall Knowledge" },
+
+    // Combat Subfolder
+    { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();`, category: "Combat" },
+    { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();`, category: "Combat" },
+    { name: DOUBLE_SLICE_MACRO_NAME, icon: DOUBLE_SLICE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeDoubleSlice();`, category: "Combat" }
 ];
 
 // --- HELPER FUNCTIONS --- //
 /**
  * Gets an existing folder by name and type, or creates it if it doesn't exist.
+ * Supports nesting subfolders under a parent folder.
  */
-async function getOrCreateFolder(name, type) {
-    let folder = game.folders.getName(name);
+async function getOrCreateFolder(name, type, parentId = null, color = MACRO_FOLDER_COLOR) {
+    // 1. Try to find a folder that already has the desired parentId
+    let folder = game.folders.find(f => {
+        if (f.name !== name || f.type !== type) return false;
+        const currentParent = f._source?.folder ?? f.folder?.id ?? (typeof f.folder === "string" ? f.folder : null);
+        return parentId ? currentParent === parentId : !currentParent;
+    });
 
+    // 2. If not found with exact parent, check if a folder with this name/type already exists (e.g. previously at root)
     if (!folder) {
-        try {
-            folder = await Folder.create({
-                name: name,
-                type: type,
-                parent: null,
-                color: MACRO_FOLDER_COLOR
-            });
-            ui.notifications.info(`[PF2e Awesome Macros For Players] Created folder: ${name}.`);
-        } catch (err) {
-            console.error(`PF2e Awesome Macros For Players | Failed to create folder: ${name}`, err);
-            return null;
+        folder = game.folders.find(f => f.name === name && f.type === type);
+    }
+
+    if (folder) {
+        // Ensure its parent folder hierarchy and color are up to date
+        const currentParent = folder._source?.folder ?? folder.folder?.id ?? (typeof folder.folder === "string" ? folder.folder : null);
+        if (currentParent !== parentId || folder.color !== color) {
+            try {
+                await folder.update({
+                    folder: parentId,
+                    color: color
+                });
+                console.log(`PF2e Awesome Macros For Players | Updated folder "${name}" to parent "${parentId}".`);
+            } catch (err) {
+                console.warn(`PF2e Awesome Macros For Players | Failed to update folder hierarchy for: ${name}`, err);
+            }
         }
+        return folder;
+    }
+
+    // 3. Otherwise create the folder with the correct parent 'folder' property
+    try {
+        folder = await Folder.create({
+            name: name,
+            type: type,
+            folder: parentId,
+            color: color
+        });
+        ui.notifications.info(`[PF2e Awesome Macros For Players] Created folder: ${name}.`);
+    } catch (err) {
+        console.error(`PF2e Awesome Macros For Players | Failed to create folder: ${name}`, err);
+        return null;
     }
     return folder;
 }
 
 /**
  * Compares the existing macros in the world to the DESIRED_MACROS list.
- * Creates missing macros, updates existing ones, and deletes obsolete ones.
+ * Creates missing macros, updates existing ones, organizes them into subfolders,
+ * and deletes obsolete ones.
  */
 async function syncMacros() {
-    const folder = await getOrCreateFolder(MACRO_FOLDER_NAME, 'Macro');
-    if (!folder) return;
+    const rootFolder = await getOrCreateFolder(MACRO_FOLDER_NAME, 'Macro', null, MACRO_FOLDER_COLOR);
+    if (!rootFolder) return;
 
-    const existingMacros = game.macros.filter(m => m.flags?.[MODULE_ID]?.isModuleMacro);
+    // Create or retrieve subfolders for organization
+    const rkFolder = await getOrCreateFolder("Recall Knowledge", 'Macro', rootFolder.id, "#1976d2");
+    const combatFolder = await getOrCreateFolder("Combat", 'Macro', rootFolder.id, "#b71c1c");
+
+    const categoryFolders = {
+        "Recall Knowledge": rkFolder,
+        "Combat": combatFolder
+    };
+
     const desiredNames = DESIRED_MACROS.map(m => m.name);
+    const moduleFolderIds = [rootFolder?.id, rkFolder?.id, combatFolder?.id].filter(Boolean);
+
+    // Identify module macros: by module flag, or by name matching a desired macro in our folders/root
+    const existingMacros = game.macros.filter(m => {
+        if (m.flags?.[MODULE_ID]?.isModuleMacro) return true;
+        if (desiredNames.includes(m.name) && (moduleFolderIds.includes(m.folder?.id) || !m.folder)) return true;
+        return false;
+    });
+
     const observerOwnership = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
 
-    const obsoleteIds = existingMacros.filter(m => !desiredNames.includes(m.name)).map(m => m.id);
+    // Only delete macros that were explicitly created by this module (flagged) and are no longer desired
+    const obsoleteIds = existingMacros.filter(m => m.flags?.[MODULE_ID]?.isModuleMacro && !desiredNames.includes(m.name)).map(m => m.id);
     if (obsoleteIds.length > 0) {
         await Macro.deleteDocuments(obsoleteIds);
         console.log(`PF2e Awesome Macros For Players | Deleted ${obsoleteIds.length} obsolete macros.`);
@@ -140,19 +198,24 @@ async function syncMacros() {
 
     for (const desired of DESIRED_MACROS) {
         const existing = existingMacros.find(m => m.name === desired.name);
+        const targetFolder = (desired.category && categoryFolders[desired.category]) ? categoryFolders[desired.category] : rootFolder;
 
         if (existing) {
-            // Check if command, icon, folder, OR ownership permissions are out of sync
-            if (existing.command !== desired.command ||
+            // Check if command, icon, folder, ownership permissions, or flag are out of sync
+            const needsUpdate =
+                existing.command !== desired.command ||
                 existing.img !== desired.icon ||
-                existing.folder?.id !== folder.id ||
-                existing.ownership.default !== observerOwnership.default) {
+                existing.folder?.id !== targetFolder.id ||
+                existing.ownership.default !== observerOwnership.default ||
+                !existing.flags?.[MODULE_ID]?.isModuleMacro;
 
+            if (needsUpdate) {
                 await existing.update({
                     command: desired.command,
                     img: desired.icon,
-                    folder: folder.id,
-                    ownership: observerOwnership
+                    folder: targetFolder.id,
+                    ownership: observerOwnership,
+                    [`flags.${MODULE_ID}.isModuleMacro`]: true
                 });
                 updatedCount++;
             }
@@ -163,7 +226,7 @@ async function syncMacros() {
                 type: "script",
                 img: desired.icon,
                 command: desired.command,
-                folder: folder.id,
+                folder: targetFolder.id,
                 ownership: observerOwnership,
                 flags: { [MODULE_ID]: { isModuleMacro: true } }
             };
@@ -243,6 +306,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeHuntedShot = executeHuntedShot;
     game.pf2eAwesomePlayerMacros.openPartyStash = openPartyStash;
     game.pf2eAwesomePlayerMacros.executeInstructiveStrike = executeInstructiveStrike;
+    game.pf2eAwesomePlayerMacros.executeDoubleSlice = executeDoubleSlice;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
