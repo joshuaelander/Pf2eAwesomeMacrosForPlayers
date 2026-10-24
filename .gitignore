@@ -427,3 +427,7 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+/foundry-pf2e-module-guide-2.md
+/foundry-pf2e-module-guide.md
+/FOUNDRY_V14_PF2E_DEVELOPMENT_REFERENCE.md
+/FOUNDRY_V14_SUPPLEMENTARY_DEV_GUIDE.md
