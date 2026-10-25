@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+10/25/2026 - Version 1.5.6 - Added Reset Movement macro to instantly revert token movement in combat back to turn origin, clearing waypoint history and ruler trails with support for native revertRecordedMovement and action tracker resets. \
+\
 10/24/2026 - Version 1.5.5 - Updated Twin Feint to use Mastermind-style EphemeralEffect rule element (Compendium.pf2e.conditionitems.Item.AJh5ex99aV6VTggg) for Strike 2, providing native PF2e AC reduction and automatic Sneak Attack triggering. \
 \
 10/24/2026 - Version 1.5.4 - Fixed icon path for Twin Feint to verified core asset 'icons/skills/melee/weapons-crossed-daggers-orange.webp'. \

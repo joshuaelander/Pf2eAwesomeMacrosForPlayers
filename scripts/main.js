@@ -89,6 +89,13 @@ import {
     TWIN_FEINT_MACRO_ICON
 } from "./twin-feint.js";
 
+import {
+    executeResetMovement,
+    RESET_MOVEMENT_MACRO_NAME,
+    RESET_MOVEMENT_MACRO_ICON,
+    resetTokenMovementAsGM
+} from "./reset-movement.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -109,7 +116,8 @@ const DESIRED_MACROS = [
     { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();`, category: "Combat" },
     { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();`, category: "Combat" },
     { name: DOUBLE_SLICE_MACRO_NAME, icon: DOUBLE_SLICE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeDoubleSlice();`, category: "Combat" },
-    { name: TWIN_FEINT_MACRO_NAME, icon: TWIN_FEINT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinFeint();`, category: "Combat" }
+    { name: TWIN_FEINT_MACRO_NAME, icon: TWIN_FEINT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinFeint();`, category: "Combat" },
+    { name: RESET_MOVEMENT_MACRO_NAME, icon: RESET_MOVEMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeResetMovement();`, category: "Combat" }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -290,6 +298,26 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     handlePlayerCreateButton(message, html, data);
 });
 
+// Helper to record token position at turn start for reliable movement resets
+async function recordTurnStartPosition(combat) {
+    const token = combat?.combatant?.token;
+    if (token && typeof token.setFlag === "function") {
+        try {
+            await token.setFlag(MODULE_ID, "turnStartPosition", {
+                x: token.x,
+                y: token.y,
+                elevation: token.elevation
+            });
+        } catch (err) {
+            console.warn("PF2e Awesome Macros For Players | Could not set turnStartPosition flag", err);
+        }
+    }
+}
+
+Hooks.on("combatTurnChange", (combat) => recordTurnStartPosition(combat));
+Hooks.on("combatRound", (combat) => recordTurnStartPosition(combat));
+Hooks.on("combatStart", (combat) => recordTurnStartPosition(combat));
+
 // Global variable for our socket
 let playerModuleSocket;
 
@@ -315,6 +343,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeInstructiveStrike = executeInstructiveStrike;
     game.pf2eAwesomePlayerMacros.executeDoubleSlice = executeDoubleSlice;
     game.pf2eAwesomePlayerMacros.executeTwinFeint = executeTwinFeint;
+    game.pf2eAwesomePlayerMacros.executeResetMovement = executeResetMovement;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
@@ -396,6 +425,9 @@ Hooks.once('ready', async () => {
         // 3. Mastermind Recall Socket
         playerModuleSocket.register("applyMastermindOffGuard", applyMastermindOffGuardAsGM);
 
+        // 4. Reset Movement Socket
+        playerModuleSocket.register("resetTokenMovement", resetTokenMovementAsGM);
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
@@ -436,6 +468,16 @@ Hooks.once('ready', async () => {
             if (error.name === "SocketlibNoGMConnectedError") {
                 ui.notifications.error("A Game Master must be online to apply the Mastermind effect.");
             }
+            return false;
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.resetTokenMovementAsGM = async (tokenUuid, targetPos) => {
+        if (!playerModuleSocket) return false;
+        try {
+            return await playerModuleSocket.executeAsGM("resetTokenMovement", tokenUuid, targetPos);
+        } catch (error) {
+            console.error("PF2e Awesome Macros For Players | Error delegating resetTokenMovement to GM:", error);
             return false;
         }
     };

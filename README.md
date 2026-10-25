@@ -32,10 +32,12 @@ Also , if you have any special lores, it will suggest the best one to use based 
 13.) Double Slice for dual-wielding characters to make two melee strikes using one-handed weapons, defaulting agile to the second weapon with non-agile penalty calculations and combined damage on hits.
  
 14.) Twin Feint for rogues to make two melee strikes with different weapons against the same target, automatically treating the target as off-guard for the second attack (enabling Sneak Attack) and applying MAP normally.
+ 
+15.) Reset Movement to instantly revert token movement during combat back to turn origin with one click, clearing recorded waypoint history and ruler lines.
 
 Macros are automatically organized in Foundry into dedicated subfolders under **PF2e Awesome Macros For Players**:
 - **Recall Knowledge**: Enhanced Recall Knowledge, Monster Hunter, Known Weaknesses, Combat Assessment, Magus's Analysis, Mastermind Rogue's Recall, Instructive Strike.
-- **Combat**: Flurry of Blows, Hunted Shot, Double Slice, Twin Feint.
+- **Combat**: Flurry of Blows, Hunted Shot, Double Slice, Twin Feint, Reset Movement.
 - **General / Utility**: Roll Random Character, Easy Exploration, Open Party Stash.
 
 If you'd like you can help support me over on Patreon to see this and many other fun tools, maps, etc related to PF2e. Linked here: https://patreon.com/AeneasPF2e
