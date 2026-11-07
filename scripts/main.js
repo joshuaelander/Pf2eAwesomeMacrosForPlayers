@@ -506,10 +506,10 @@ Hooks.once('ready', async () => {
         }
     };
 
-    game.pf2eAwesomePlayerMacros.applyLingeringEffect = async (targetActorUuid, effectData, durationRounds, originActorUuid) => {
+    game.pf2eAwesomePlayerMacros.applyLingeringEffect = async (targetActorUuid, effectData, durationRounds, originActorUuid, isCondition = false, conditionSlug = null) => {
         if (!playerModuleSocket) return false;
         try {
-            return await playerModuleSocket.executeAsGM("applyLingeringEffect", targetActorUuid, effectData, durationRounds, originActorUuid);
+            return await playerModuleSocket.executeAsGM("applyLingeringEffect", targetActorUuid, effectData, durationRounds, originActorUuid, isCondition, conditionSlug);
         } catch (error) {
             console.error("PF2e Awesome Macros For Players | Error applying lingering effect as GM:", error);
             return false;

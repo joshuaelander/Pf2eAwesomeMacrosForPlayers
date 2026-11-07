@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/7/2026 - Version 1.6.1 - Updated Lingering Composition to query and apply official PF2e compendium spell effects (pf2e.spell-effects). Fixed Dirge of Doom so the bard is never debuffed by their own chant, and foes receive the native PF2e Frightened 1 condition to avoid redundant non-stacking debuffs. Preserved user's custom image for Martial Performance. \
+\
 11/7/2026 - Version 1.6.0 - Added Lingering Composition macro (with Performance check vs standard level DC, focus point deduction/refund, cantrip selection, aura generation, and direct allied application) and Martial Performance macro (Warrior Muse duration incrementation on active anthems by +1 round). \
 \
 11/7/2026 - Version 1.5.8 - Removed target creature name and banner from Hunted Shot chat cards and setup dialog to avoid exposing secret creature information. \

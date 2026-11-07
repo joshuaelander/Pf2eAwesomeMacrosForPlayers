@@ -127,7 +127,7 @@ export const COMPOSITION_CANTRIPS = [
         targetType: "enemy",
         description: "Enemies in 30 ft emanation become Frightened 1 (cannot reduce below 1 while in range).",
         rules: [
-            { key: "FlatModifier", selector: "all", value: -1, type: "status", label: "Dirge of Doom (Frightened 1)" }
+            { key: "Aura", radius: 30, traits: ["auditory", "cantrip", "composition", "emotion", "fear", "mental"], includesSelf: false }
         ]
     }
 ];
@@ -195,39 +195,59 @@ function getTokensInRange(sourceToken, radiusFeet, targetType = "ally") {
 
 /**
  * Builds the effect data object for a composition cantrip with exact duration and aura.
+ * Loads the official compendium document from pf2e.spell-effects whenever available.
  */
 async function buildCompositionEffectData(cantrip, durationRounds, casterToken, casterActor) {
     let baseData = null;
 
-    // 1. Try fetching official compendium item
-    if (cantrip.compendiumUuid) {
+    // 1. Try fetching official compendium document from pf2e.spell-effects
+    const pack = game.packs.get("pf2e.spell-effects");
+    if (pack) {
+        try {
+            const index = await pack.getIndex({ fields: ["name", "system.slug", "img"] });
+
+            // Search by slug first
+            const searchSlugs = [cantrip.effectSlug, cantrip.legacyEffectSlug].filter(Boolean);
+            let match = index.find(e => searchSlugs.includes(e.system?.slug));
+
+            // If not found by slug, search by names
+            if (!match) {
+                const searchNames = [
+                    cantrip.name.toLowerCase(),
+                    cantrip.legacyName?.toLowerCase(),
+                    `spell effect: ${cantrip.name.toLowerCase()}`,
+                    `spell effect: ${cantrip.legacyName?.toLowerCase()}`
+                ].filter(Boolean);
+                match = index.find(e => {
+                    const n = e.name.toLowerCase();
+                    return searchNames.some(s => n === s || n.includes(s));
+                });
+            }
+
+            if (match) {
+                const doc = await pack.getDocument(match._id);
+                if (doc) {
+                    baseData = doc.toObject();
+                }
+            }
+        } catch (err) {
+            console.warn("PF2e Lingering Composition | Could not query pf2e.spell-effects index", err);
+        }
+    }
+
+    // 2. Try by compendiumUuid if pack search did not find it
+    if (!baseData && cantrip.compendiumUuid) {
         try {
             const compDoc = await fromUuid(cantrip.compendiumUuid);
             if (compDoc) {
                 baseData = compDoc.toObject();
             }
         } catch {
-            // compendium offline or unavailable
+            // ignore
         }
     }
 
-    // 2. Try pack search by slug
-    if (!baseData) {
-        const pack = game.packs.get("pf2e.spell-effects");
-        if (pack) {
-            const match = pack.index.find(e => e.system?.slug === cantrip.effectSlug || e.system?.slug === cantrip.legacyEffectSlug);
-            if (match) {
-                try {
-                    const doc = await pack.getDocument(match._id);
-                    if (doc) baseData = doc.toObject();
-                } catch {
-                    // ignore
-                }
-            }
-        }
-    }
-
-    // 3. Fallback to self-contained template
+    // 3. Fallback to self-contained template if compendium unavailable
     if (!baseData) {
         baseData = {
             type: "effect",
@@ -240,6 +260,11 @@ async function buildCompositionEffectData(cantrip, durationRounds, casterToken, 
                 rules: cantrip.rules || []
             }
         };
+    }
+
+    // For Dirge of Doom, ensure no harmful FlatModifier is attached to the aura effect itself
+    if (cantrip.id === "dirge-of-doom" && Array.isArray(baseData.system?.rules)) {
+        baseData.system.rules = baseData.system.rules.filter(r => !(r.key === "FlatModifier" && r.selector === "all"));
     }
 
     // Format duration and context
@@ -262,14 +287,42 @@ async function buildCompositionEffectData(cantrip, durationRounds, casterToken, 
 }
 
 /**
- * Socketlib handler to apply or update a lingering composition effect on any actor as GM.
+ * Socketlib handler to apply or update a lingering composition effect or condition as GM.
  */
-export async function applyLingeringEffectAsGM(targetActorUuid, effectData, durationRounds, originActorUuid) {
-    if (!targetActorUuid || !effectData) return false;
+export async function applyLingeringEffectAsGM(targetActorUuid, effectData, durationRounds, originActorUuid, isCondition = false, conditionSlug = null) {
+    if (!targetActorUuid) return false;
     const target = await fromUuid(targetActorUuid);
     const targetActor = target?.actor ?? target;
     if (!targetActor) return false;
 
+    // Remove any older conflicting custom dirge-of-doom effects with FlatModifier if present
+    const oldCustomDirge = targetActor.itemTypes.effect.filter(e => 
+        e.slug === "spell-effect-dirge-of-doom" && 
+        e.system?.rules?.some(r => r.key === "FlatModifier")
+    );
+    if (oldCustomDirge.length > 0) {
+        try {
+            await targetActor.deleteEmbeddedDocuments("Item", oldCustomDirge.map(e => e.id));
+        } catch (err) {
+            console.warn("PF2e Lingering Composition | Could not remove obsolete dirge effect", err);
+        }
+    }
+
+    // 1. If applying a native condition (such as Frightened 1 on enemies for Dirge of Doom)
+    if (isCondition && conditionSlug) {
+        if (typeof targetActor.increaseCondition === "function") {
+            const currentVal = targetActor.getCondition?.(conditionSlug)?.value ?? 0;
+            // Only increase if not already at or above 1 (prevent stacking!)
+            if (currentVal < 1) {
+                await targetActor.increaseCondition(conditionSlug, { value: 1 });
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // 2. Regular effect application (beneficial anthems)
+    if (!effectData) return false;
     const effectSlug = effectData.system?.slug;
 
     // Remove existing matching effect to refresh duration cleanly
@@ -602,41 +655,66 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
         }
     }
 
-    // 4. Build Effect Data
+    // 4. Build Effect Data from Official Compendium
     const effectData = await buildCompositionEffectData(cantrip, durationRounds, token, actor);
 
-    // 5. Apply Effect to Caster (always)
+    // 5. Apply Effect to Caster
     const casterSlug = effectData.system?.slug;
-    const existingCasterEffect = actor.itemTypes.effect.filter(e => e.slug === casterSlug || e.name === effectData.name);
-    if (existingCasterEffect.length > 0) {
-        await actor.deleteEmbeddedDocuments("Item", existingCasterEffect.map(e => e.id));
+    const existingCasterEffects = actor.itemTypes.effect.filter(e => 
+        e.slug === casterSlug || 
+        e.name === effectData.name ||
+        (cantrip.id === "dirge-of-doom" && (e.slug?.includes("dirge-of-doom") || e.name?.toLowerCase().includes("dirge of doom")))
+    );
+    if (existingCasterEffects.length > 0) {
+        await actor.deleteEmbeddedDocuments("Item", existingCasterEffects.map(e => e.id));
     }
+
+    // Apply the official aura effect to the caster (includesSelf: false for Dirge of Doom ensures no debuff to caster)
     await actor.createEmbeddedDocuments("Item", [effectData]);
 
-    // 6. Apply Effect to Checked Targets (via GM Socket if other actors)
-    const appliedNames = [actor.name];
+    // 6. Apply to Checked Targets (via GM Socket if other actors)
+    const appliedNames = [];
+    if (cantrip.targetType === "ally") {
+        appliedNames.push(actor.name);
+    }
+
     if (applyDirect && targetActorUuids?.length > 0) {
         for (const targetUuid of targetActorUuids) {
             if (targetUuid === actor.uuid) continue;
             
             let success = false;
-            if (game.pf2eAwesomePlayerMacros?.applyLingeringEffect) {
-                success = await game.pf2eAwesomePlayerMacros.applyLingeringEffect(targetUuid, effectData, durationRounds, actor.uuid);
+            if (cantrip.id === "dirge-of-doom") {
+                // For Dirge of Doom: apply native Frightened 1 condition to foes so it doesn't double-stack
+                if (game.pf2eAwesomePlayerMacros?.applyLingeringEffect) {
+                    success = await game.pf2eAwesomePlayerMacros.applyLingeringEffect(targetUuid, null, durationRounds, actor.uuid, true, "frightened");
+                } else {
+                    const targetDoc = await fromUuid(targetUuid);
+                    const targetActor = targetDoc?.actor ?? targetDoc;
+                    if (targetActor?.isOwner && typeof targetActor.increaseCondition === "function") {
+                        const cur = targetActor.getCondition?.("frightened")?.value ?? 0;
+                        if (cur < 1) await targetActor.increaseCondition("frightened", { value: 1 });
+                        success = true;
+                    }
+                }
             } else {
-                // Direct fallback if user is GM or owns target
-                const targetDoc = await fromUuid(targetUuid);
-                const targetActor = targetDoc?.actor ?? targetDoc;
-                if (targetActor?.isOwner) {
-                    const oldEffects = targetActor.itemTypes.effect.filter(e => e.slug === casterSlug || e.name === effectData.name);
-                    if (oldEffects.length > 0) await targetActor.deleteEmbeddedDocuments("Item", oldEffects.map(e => e.id));
-                    await targetActor.createEmbeddedDocuments("Item", [effectData]);
-                    success = true;
+                // For beneficial anthems: apply official spell effect document
+                if (game.pf2eAwesomePlayerMacros?.applyLingeringEffect) {
+                    success = await game.pf2eAwesomePlayerMacros.applyLingeringEffect(targetUuid, effectData, durationRounds, actor.uuid, false, null);
+                } else {
+                    const targetDoc = await fromUuid(targetUuid);
+                    const targetActor = targetDoc?.actor ?? targetDoc;
+                    if (targetActor?.isOwner) {
+                        const oldEffects = targetActor.itemTypes.effect.filter(e => e.slug === casterSlug || e.name === effectData.name);
+                        if (oldEffects.length > 0) await targetActor.deleteEmbeddedDocuments("Item", oldEffects.map(e => e.id));
+                        await targetActor.createEmbeddedDocuments("Item", [effectData]);
+                        success = true;
+                    }
                 }
             }
 
             if (success) {
                 const doc = await fromUuid(targetUuid);
-                const name = doc?.name ?? doc?.actor?.name ?? "Ally";
+                const name = doc?.name ?? doc?.actor?.name ?? (cantrip.targetType === "enemy" ? "Foe" : "Ally");
                 appliedNames.push(name);
             }
         }
@@ -646,9 +724,17 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
     const rollTotalHtml = rollTotal !== undefined ? `<strong>Check Result:</strong> ${rollTotal} vs DC ${targetDC}` : `<strong>Target DC:</strong> ${targetDC}`;
     const roundPlural = durationRounds === 1 ? "round" : "rounds";
 
-    const targetBadgesHtml = appliedNames.map(n => 
-        `<span style="display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; background: rgba(0,0,0,0.06); border-radius: 3px; font-size: 0.85em;">✓ ${n}</span>`
-    ).join("");
+    const targetSectionTitle = cantrip.targetType === "enemy" 
+        ? `Foes Affected (Frightened 1):` 
+        : `Affected Recipients (${durationRounds} ${roundPlural}):`;
+
+    const targetBadgesHtml = appliedNames.length > 0
+        ? appliedNames.map(n => `<span style="display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; background: rgba(0,0,0,0.06); border-radius: 3px; font-size: 0.85em;">✓ ${n}</span>`).join("")
+        : `<em style="color: #666; font-size: 0.85em;">No external targets affected. (${cantrip.radius} ft. Aura active on ${actor.name})</em>`;
+
+    const auraDescription = cantrip.targetType === "enemy"
+        ? `<strong>Active Aura:</strong> ${cantrip.name} (${cantrip.radius} ft. emanation, lasts ${durationRounds} ${roundPlural})`
+        : `<strong>Active Effect (${cantrip.name}):</strong> ${cantrip.description}`;
 
     await ChatMessage.create({
         user: game.user.id,
@@ -672,10 +758,10 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
                         </div>
                     </div>
                     <div style="margin-bottom: 6px; font-size: 0.85em; color: #333;">
-                        <strong>Active Effect (${cantrip.name}):</strong> ${cantrip.description}
+                        ${auraDescription}
                     </div>
                     <div style="margin-top: 4px;">
-                        <div style="font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; color: #555; font-weight: bold; margin-bottom: 2px;">Affected Recipients (${durationRounds} ${roundPlural}):</div>
+                        <div style="font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; color: #555; font-weight: bold; margin-bottom: 2px;">${targetSectionTitle}</div>
                         <div>${targetBadgesHtml}</div>
                     </div>
                 </div>
