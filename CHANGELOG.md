@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/7/2026 - Version 1.6.0 - Added Lingering Composition macro (with Performance check vs standard level DC, focus point deduction/refund, cantrip selection, aura generation, and direct allied application) and Martial Performance macro (Warrior Muse duration incrementation on active anthems by +1 round). \
+\
 11/7/2026 - Version 1.5.8 - Removed target creature name and banner from Hunted Shot chat cards and setup dialog to avoid exposing secret creature information. \
 \
 11/7/2026 - Version 1.5.7 - Fixed Twin Feint damage rolls so off-guard and Sneak Attack precision damage apply strictly to the second strike and not the first strike unless the creature was already off-guard. \

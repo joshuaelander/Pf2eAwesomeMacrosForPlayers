@@ -96,6 +96,20 @@ import {
     resetTokenMovementAsGM
 } from "./reset-movement.js";
 
+import {
+    executeLingeringComposition,
+    LINGERING_COMPOSITION_MACRO_NAME,
+    LINGERING_COMPOSITION_MACRO_ICON,
+    applyLingeringEffectAsGM
+} from "./lingering-composition.js";
+
+import {
+    executeMartialPerformance,
+    MARTIAL_PERFORMANCE_MACRO_NAME,
+    MARTIAL_PERFORMANCE_MACRO_ICON,
+    extendAnthemDurationAsGM
+} from "./martial-performance.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -117,7 +131,9 @@ const DESIRED_MACROS = [
     { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();`, category: "Combat" },
     { name: DOUBLE_SLICE_MACRO_NAME, icon: DOUBLE_SLICE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeDoubleSlice();`, category: "Combat" },
     { name: TWIN_FEINT_MACRO_NAME, icon: TWIN_FEINT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinFeint();`, category: "Combat" },
-    { name: RESET_MOVEMENT_MACRO_NAME, icon: RESET_MOVEMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeResetMovement();`, category: "Combat" }
+    { name: RESET_MOVEMENT_MACRO_NAME, icon: RESET_MOVEMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeResetMovement();`, category: "Combat" },
+    { name: LINGERING_COMPOSITION_MACRO_NAME, icon: LINGERING_COMPOSITION_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeLingeringComposition();`, category: "Combat" },
+    { name: MARTIAL_PERFORMANCE_MACRO_NAME, icon: MARTIAL_PERFORMANCE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMartialPerformance();`, category: "Combat" }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -344,6 +360,8 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeDoubleSlice = executeDoubleSlice;
     game.pf2eAwesomePlayerMacros.executeTwinFeint = executeTwinFeint;
     game.pf2eAwesomePlayerMacros.executeResetMovement = executeResetMovement;
+    game.pf2eAwesomePlayerMacros.executeLingeringComposition = executeLingeringComposition;
+    game.pf2eAwesomePlayerMacros.executeMartialPerformance = executeMartialPerformance;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
@@ -428,6 +446,12 @@ Hooks.once('ready', async () => {
         // 4. Reset Movement Socket
         playerModuleSocket.register("resetTokenMovement", resetTokenMovementAsGM);
 
+        // 5. Lingering Composition Socket
+        playerModuleSocket.register("applyLingeringEffect", applyLingeringEffectAsGM);
+
+        // 6. Martial Performance Socket
+        playerModuleSocket.register("extendAnthemDuration", extendAnthemDurationAsGM);
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
@@ -479,6 +503,26 @@ Hooks.once('ready', async () => {
         } catch (error) {
             console.error("PF2e Awesome Macros For Players | Error delegating resetTokenMovement to GM:", error);
             return false;
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.applyLingeringEffect = async (targetActorUuid, effectData, durationRounds, originActorUuid) => {
+        if (!playerModuleSocket) return false;
+        try {
+            return await playerModuleSocket.executeAsGM("applyLingeringEffect", targetActorUuid, effectData, durationRounds, originActorUuid);
+        } catch (error) {
+            console.error("PF2e Awesome Macros For Players | Error applying lingering effect as GM:", error);
+            return false;
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.extendAnthemDuration = async (targetActorUuid, effectId, deltaRounds = 1) => {
+        if (!playerModuleSocket) return null;
+        try {
+            return await playerModuleSocket.executeAsGM("extendAnthemDuration", targetActorUuid, effectId, deltaRounds);
+        } catch (error) {
+            console.error("PF2e Awesome Macros For Players | Error extending anthem duration as GM:", error);
+            return null;
         }
     };
 
