@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/7/2026 - Version 1.5.7 - Fixed Twin Feint damage rolls so off-guard and Sneak Attack precision damage apply strictly to the second strike and not the first strike unless the creature was already off-guard. \
+\
 10/25/2026 - Version 1.5.6 - Added Reset Movement macro to instantly revert token movement in combat back to turn origin, clearing waypoint history and ruler trails with support for native revertRecordedMovement and action tracker resets. \
 \
 10/24/2026 - Version 1.5.5 - Updated Twin Feint to use Mastermind-style EphemeralEffect rule element (Compendium.pf2e.conditionitems.Item.AJh5ex99aV6VTggg) for Strike 2, providing native PF2e AC reduction and automatic Sneak Attack triggering. \

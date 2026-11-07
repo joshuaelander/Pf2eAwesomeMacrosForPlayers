@@ -61,14 +61,84 @@ function isOneHandedMeleeStrike(strike) {
 }
 
 /**
+ * Safe deep clone helper.
+ */
+function deepClone(obj) {
+    if (!obj) return {};
+    if (globalThis.foundry?.utils?.deepClone) {
+        return foundry.utils.deepClone(obj);
+    }
+    try {
+        return JSON.parse(JSON.stringify(obj));
+    } catch {
+        return { ...obj };
+    }
+}
+
+/**
  * Checks if a target actor is already off-guard (or flat-footed).
  */
 function isTargetOffGuard(targetActor) {
     if (!targetActor) return false;
+    if (typeof targetActor.hasCondition === "function") {
+        if (targetActor.hasCondition("off-guard") || targetActor.hasCondition("flat-footed")) return true;
+    }
     const hasCondition = targetActor.itemTypes?.condition?.some(c => c.slug === "off-guard" || c.slug === "flat-footed");
-    const hasRollOption = Boolean(targetActor.flags?.pf2e?.rollOptions?.all?.["self:condition:off-guard"] ||
-                                  targetActor.flags?.pf2e?.rollOptions?.all?.["self:condition:flat-footed"]);
+    const hasRollOption = Boolean(
+        targetActor.flags?.pf2e?.rollOptions?.all?.["self:condition:off-guard"] ||
+        targetActor.flags?.pf2e?.rollOptions?.all?.["self:condition:flat-footed"] ||
+        targetActor.rollOptions?.all?.["self:condition:off-guard"] ||
+        targetActor.rollOptions?.all?.["self:condition:flat-footed"]
+    );
     return hasCondition || hasRollOption;
+}
+
+/**
+ * Creates a temporary effect on the actor granting Ephemeral Off-Guard against the target.
+ */
+async function applyOffGuardEffect(actor, target) {
+    try {
+        const effectData = {
+            type: "effect",
+            name: `Twin Feint: Off-Guard (${target?.name ?? "Target"})`,
+            img: TWIN_FEINT_MACRO_ICON,
+            system: {
+                slug: "twin-feint-off-guard",
+                level: { value: 1 },
+                duration: { value: 1, unit: "rounds", expiry: "turn-end" },
+                description: {
+                    value: `<p>Target is automatically off-guard against Twin Feint's second Strike.</p>`
+                },
+                rules: [
+                    {
+                        key: "EphemeralEffect",
+                        selectors: ["strike-attack-roll", "strike-damage"],
+                        uuid: "Compendium.pf2e.conditionitems.Item.AJh5ex99aV6VTggg"
+                    }
+                ]
+            }
+        };
+        const created = await actor.createEmbeddedDocuments("Item", [effectData]);
+        return created?.[0]?.id ?? null;
+    } catch (err) {
+        console.warn("PF2e Twin Feint | Could not create ephemeral off-guard effect", err);
+        return null;
+    }
+}
+
+/**
+ * Removes a temporary off-guard effect from the actor.
+ */
+async function removeOffGuardEffect(actor, effectId) {
+    if (!effectId) return;
+    const exists = actor.items?.has?.(effectId);
+    if (exists) {
+        try {
+            await actor.deleteEmbeddedDocuments("Item", [effectId]);
+        } catch (err) {
+            console.warn("PF2e Twin Feint | Error cleaning up ephemeral effect", err);
+        }
+    }
 }
 
 /**
@@ -332,39 +402,12 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
     // Wait 1.5s to let dice settle
     await new Promise(r => setTimeout(r, 1500));
 
-    // 3. Prepare Strike 2 (Target Automatically Off-Guard)
-    // If target is not already off-guard, create a temporary Mastermind-style EphemeralEffect
-    // on the rogue actor so PF2e natively treats the target as Off-Guard (-2 AC & Sneak Attack).
-    let tempEffectId = null;
+    // 3. Roll Strike 2 (Target Automatically Off-Guard)
     const targetAlreadyOffGuard = isTargetOffGuard(target?.actor);
+    let attackEffectId = null;
 
     if (!targetAlreadyOffGuard) {
-        try {
-            const effectData = {
-                type: "effect",
-                name: `Twin Feint: Off-Guard (${target?.name ?? "Target"})`,
-                img: TWIN_FEINT_MACRO_ICON,
-                system: {
-                    slug: "twin-feint-off-guard",
-                    level: { value: 1 },
-                    duration: { value: 1, unit: "rounds", expiry: "turn-end" },
-                    description: {
-                        value: `<p>Target is automatically off-guard against Twin Feint's second Strike.</p>`
-                    },
-                    rules: [
-                        {
-                            key: "EphemeralEffect",
-                            selectors: ["strike-attack-roll", "strike-damage"],
-                            uuid: "Compendium.pf2e.conditionitems.Item.AJh5ex99aV6VTggg"
-                        }
-                    ]
-                }
-            };
-            const created = await actor.createEmbeddedDocuments("Item", [effectData]);
-            tempEffectId = created?.[0]?.id ?? null;
-        } catch (err) {
-            console.warn("PF2e Twin Feint | Could not create ephemeral off-guard effect, falling back to roll options & modifiers", err);
-        }
+        attackEffectId = await applyOffGuardEffect(actor, target);
     }
 
     reassertTarget(target);
@@ -380,7 +423,7 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
     };
 
     // Fallback: If ephemeral effect could not be created and target is not off-guard, add +2 circumstance modifier
-    if (!tempEffectId && !targetAlreadyOffGuard && globalThis.game?.pf2e?.Modifier) {
+    if (!attackEffectId && !targetAlreadyOffGuard && globalThis.game?.pf2e?.Modifier) {
         rollArgs2.modifiers = [
             new game.pf2e.Modifier({
                 slug: "twin-feint-off-guard",
@@ -391,7 +434,13 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
         ];
     }
 
-    await strike2.variants[s2MapIdx].roll(rollArgs2);
+    try {
+        await strike2.variants[s2MapIdx].roll(rollArgs2);
+    } finally {
+        if (attackEffectId) {
+            await removeOffGuardEffect(actor, attackEffectId);
+        }
+    }
     const attack2Msg = await attack2Promise;
 
     if (!target && attack2Msg?.target?.token?.object) {
@@ -415,21 +464,6 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
 
     const strike1Summary = attack1Msg?.rolls?.[0]?.total ? ` (Total: ${attack1Msg.rolls[0].total})` : "";
     const strike2Summary = attack2Msg?.rolls?.[0]?.total ? ` (Total: ${attack2Msg.rolls[0].total})` : "";
-
-    // Helper to safely clean up the temporary effect once Strike 2 damage is resolved or cancelled
-    const cleanupTempEffect = async () => {
-        if (tempEffectId) {
-            const effectExists = actor.items.has(tempEffectId);
-            if (effectExists) {
-                try {
-                    await actor.deleteEmbeddedDocuments("Item", [tempEffectId]);
-                } catch (err) {
-                    console.warn("PF2e Twin Feint | Error cleaning up ephemeral effect", err);
-                }
-            }
-            tempEffectId = null;
-        }
-    };
 
     // 5. Outcome & Damage Confirmation Dialog
     const confirmContent = `
@@ -463,10 +497,7 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
         buttons: {
             cancel: {
                 icon: '<i class="fas fa-times"></i>',
-                label: "Cancel",
-                callback: async () => {
-                    await cleanupTempEffect();
-                }
+                label: "Cancel"
             },
             rollDamage: {
                 icon: '<i class="fas fa-dice-d20"></i>',
@@ -475,25 +506,18 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
                     const outcome1 = html.find("#tf-outcome-1").val();
                     const outcome2 = html.find("#tf-outcome-2").val();
 
-                    try {
-                        await resolveTwinFeintDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg);
-                    } finally {
-                        await cleanupTempEffect();
-                    }
+                    await resolveTwinFeintDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg, targetAlreadyOffGuard);
                 }
             }
         },
-        default: "rollDamage",
-        close: async () => {
-            await cleanupTempEffect();
-        }
+        default: "rollDamage"
     }).render(true);
 }
 
 /**
  * Rolls damage for each successful strike.
  */
-async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg) {
+async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg, targetAlreadyOffGuard = false) {
     const hit1 = outcome1 !== "miss";
     const hit2 = outcome2 !== "miss";
 
@@ -520,23 +544,45 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
         });
     }
 
+    // Safety: ensure no lingering off-guard effects exist before Strike 1 damage
+    const lingering = actor.itemTypes?.effect?.filter(e => e.slug === "twin-feint-off-guard") ?? [];
+    if (lingering.length > 0) {
+        await actor.deleteEmbeddedDocuments("Item", lingering.map(e => e.id));
+    }
+
     // Helper to roll damage with attached context
     const rollStrikeDamage = async (strike, outcome, attackMsg, isStrike2 = false) => {
         reassertTarget(target);
         const isCrit = outcome === "crit";
-        const attackContext = attackMsg?.flags?.pf2e?.context ?? null;
+        const attackContext = attackMsg?.flags?.pf2e?.context ? deepClone(attackMsg.flags.pf2e.context) : null;
         const targetObj = target?.object ?? target ?? null;
 
         const extraOptions = ["action:twin-feint"];
         if (isStrike2) {
             extraOptions.push("target:condition:off-guard", "target:condition:flat-footed");
+            if (attackContext) {
+                attackContext.options = Array.isArray(attackContext.options) ? [...attackContext.options] : [];
+                if (!attackContext.options.includes("target:condition:off-guard")) {
+                    attackContext.options.push("target:condition:off-guard");
+                }
+                if (!attackContext.options.includes("target:condition:flat-footed")) {
+                    attackContext.options.push("target:condition:flat-footed");
+                }
+            }
+        } else if (!targetAlreadyOffGuard && attackContext) {
+            if (Array.isArray(attackContext.options)) {
+                attackContext.options = attackContext.options.filter(
+                    o => o !== "target:condition:off-guard" && o !== "target:condition:flat-footed"
+                );
+            }
         }
 
         const rollArgs = {
             checkContext: attackContext,
             target: targetObj,
             outcome: isCrit ? "criticalSuccess" : "success",
-            extraRollOptions: extraOptions
+            extraRollOptions: extraOptions,
+            options: extraOptions
         };
 
         try {
@@ -551,7 +597,7 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
         }
     };
 
-    // Roll Strike 1 Damage if it hit
+    // Roll Strike 1 Damage if it hit (target is NOT automatically off-guard for Strike 1)
     if (hit1) {
         await rollStrikeDamage(strike1, outcome1, attack1Msg, false);
     }
@@ -561,8 +607,18 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
         await new Promise(r => setTimeout(r, 600));
     }
 
-    // Roll Strike 2 Damage if it hit (Off-Guard triggers Sneak Attack)
+    // Roll Strike 2 Damage if it hit (Target IS automatically Off-Guard -> triggers Sneak Attack)
     if (hit2) {
-        await rollStrikeDamage(strike2, outcome2, attack2Msg, true);
+        let dmgEffectId = null;
+        try {
+            if (!targetAlreadyOffGuard) {
+                dmgEffectId = await applyOffGuardEffect(actor, target);
+            }
+            await rollStrikeDamage(strike2, outcome2, attack2Msg, true);
+        } finally {
+            if (dmgEffectId) {
+                await removeOffGuardEffect(actor, dmgEffectId);
+            }
+        }
     }
 }
