@@ -155,8 +155,8 @@ export async function executeHuntedShot() {
            </div>`;
 
     const targetInfoHtml = target 
-        ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(0, 0, 0, 0.04); border-left: 3px solid #1976d2; border-radius: 3px;">
-             <strong>Target:</strong> ${target.name}
+        ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px;">
+             <strong style="color: #2e7d32;">✓ Target Selected</strong>
            </div>`
         : `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.08); border-left: 3px solid #f57c00; border-radius: 3px;">
              <em style="font-size: 0.9em; color: #555;">No target selected. (Targeting your prey is recommended for automatic hit detection & damage application).</em>
@@ -292,7 +292,6 @@ async function runHuntedShotSequence(actor, token, target, strike1, strike2, sta
     const map2Tag = `MAP ${getStrikeMapPenalty(strike2, map2Index)}`;
 
     // 1. Post Hunted Shot Header to Chat
-    const targetText = target ? ` against <strong>${target.name}</strong>` : "";
     await ChatMessage.create({
         user: game.user.id,
         speaker: ChatMessage.getSpeaker({ actor, token }),
@@ -303,7 +302,7 @@ async function runHuntedShotSequence(actor, token, target, strike1, strike2, sta
                     <h3>Hunted Shot</h3>
                 </header>
                 <div class="card-content">
-                    <p><strong>${actor.name}</strong> takes two quick shots${targetText}!</p>
+                    <p><strong>${actor.name}</strong> takes two quick shots!</p>
                 </div>
             </div>
         `
@@ -561,17 +560,6 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
         combinedFlags["pf2e-target-damage"] = deepClone(dmg1Msg.flags["pf2e-target-damage"]);
     }
 
-    const targetImg = target?.document?.texture?.src ?? target?.actor?.img ?? "icons/svg/target.svg";
-    const targetHeaderHtml = target ? `
-        <div style="display: flex; align-items: center; gap: 8px; margin: 4px 0 8px 0; padding: 6px 10px; background: rgba(0, 0, 0, 0.04); border-left: 3px solid #2e7d32; border-radius: 4px;">
-            <img src="${targetImg}" width="32" height="32" style="border-radius: 4px; border: 1px solid #777; object-fit: cover; flex-shrink: 0;"/>
-            <div>
-                <div style="font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; color: #555; font-weight: bold; line-height: 1;">Targeted Prey</div>
-                <div style="font-weight: bold; font-size: 1.05em; color: #222;">${target.name}</div>
-            </div>
-        </div>
-    ` : "";
-
     const cardFlavorHtml = `
         <div class="pf2e chat-card">
             <header class="card-header flexrow">
@@ -579,7 +567,6 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
                 <h3>Hunted Shot - Combined Damage</h3>
             </header>
             <div class="card-content">
-                ${targetHeaderHtml}
                 <p style="margin-bottom: 4px;"><strong>Combined for Resistances & Weaknesses:</strong></p>
                 <p style="font-size: 0.85em; color: #444; border-left: 3px solid #990000; padding-left: 6px; background: rgba(0,0,0,0.03); margin: 0 0 6px 0;">
                     • ${breakdown1}<br>
@@ -621,7 +608,6 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
                     <h3>Hunted Shot - Combined Damage</h3>
                 </header>
                 <div class="card-content">
-                    ${targetHeaderHtml}
                     <p><strong>Combined Damage:</strong> @Damage[${combinedFormula}]</p>
                     <p style="font-size: 0.85em; color: #444;">
                         • ${breakdown1}<br>

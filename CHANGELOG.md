@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/7/2026 - Version 1.5.8 - Removed target creature name and banner from Hunted Shot chat cards and setup dialog to avoid exposing secret creature information. \
+\
 11/7/2026 - Version 1.5.7 - Fixed Twin Feint damage rolls so off-guard and Sneak Attack precision damage apply strictly to the second strike and not the first strike unless the creature was already off-guard. \
 \
 10/25/2026 - Version 1.5.6 - Added Reset Movement macro to instantly revert token movement in combat back to turn origin, clearing waypoint history and ruler trails with support for native revertRecordedMovement and action tracker resets. \
