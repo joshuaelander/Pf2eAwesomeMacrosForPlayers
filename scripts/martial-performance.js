@@ -29,8 +29,12 @@ const ANTHEM_SLUGS = [
     "spell-effect-rallying-anthem",
     "spell-effect-inspire-defense",
     "spell-effect-song-of-strength",
+    "spell-effect-triple-time",
+    "spell-effect-uplifting-overture",
+    "spell-effect-allegro",
     "spell-effect-dirge-of-doom",
-    "spell-effect-song-of-marching"
+    "spell-effect-song-of-marching",
+    "spell-effect-house-of-imaginary-walls"
 ];
 
 /**
@@ -40,9 +44,9 @@ function isAnthemEffect(effect) {
     if (!effect) return false;
     const slug = effect.slug || effect.system?.slug || "";
     if (ANTHEM_SLUGS.includes(slug)) return true;
-    if (slug.includes("anthem") || slug.includes("inspire-") || slug.includes("song-of-")) return true;
+    if (slug.includes("anthem") || slug.includes("inspire") || slug.includes("song-of-") || slug.includes("triple-time") || slug.includes("overture") || slug.includes("allegro")) return true;
     const name = effect.name?.toLowerCase() || "";
-    if (name.includes("anthem") || name.includes("inspire courage") || name.includes("inspire defense") || name.includes("song of strength")) return true;
+    if (name.includes("anthem") || name.includes("inspire") || name.includes("song of") || name.includes("triple time") || name.includes("overture") || name.includes("allegro") || name.includes("dirge of doom")) return true;
     return false;
 }
 

@@ -35,7 +35,7 @@ Also , if you have any special lores, it will suggest the best one to use based 
  
 15.) Reset Movement to instantly revert token movement during combat back to turn origin with one click, clearing recorded waypoint history and ruler lines.
  
-16.) Lingering Composition for bards to roll Performance against a standard DC by level, automatically applying composition cantrip buffs (Courageous Anthem, Rallying Anthem, Song of Strength, Dirge of Doom) to the caster (with 60 ft Aura) and/or directly to allies for 1, 3, or 4 rounds, automatically handling Focus Point costs and failure refunds.
+16.) Lingering Composition for bards to roll Performance against a standard DC by level, automatically applying composition cantrip buffs (Courageous Anthem, Rallying Anthem, Song of Strength, Triple Time, Uplifting Overture, Allegro, Dirge of Doom, Song of Marching, etc., with dynamic detection of any custom/archetype cantrips on the character sheet) to the caster (with native Auras) and/or directly to allies for 1, 3, or 4 rounds, automatically handling Focus Point costs and failure refunds.
  
 17.) Martial Performance for warrior muse bards to extend the remaining duration of active composition cantrip / anthem effects by +1 round across all selected tokens and nearby allies.
 

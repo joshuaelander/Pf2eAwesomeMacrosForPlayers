@@ -116,6 +116,52 @@ export const COMPOSITION_CANTRIPS = [
         ]
     },
     {
+        id: "triple-time",
+        name: "Triple Time",
+        legacyName: "Triple Time",
+        effectSlug: "spell-effect-triple-time",
+        legacyEffectSlug: "spell-effect-triple-time",
+        compendiumUuid: null,
+        icon: "icons/skills/movement/feet-winged-boots-glowing-yellow.webp",
+        radius: 60,
+        targetType: "ally",
+        description: "+10-foot status bonus to all Speeds.",
+        rules: [
+            { key: "FlatModifier", selector: "speed", value: 10, type: "status", label: "Triple Time" }
+        ]
+    },
+    {
+        id: "uplifting-overture",
+        name: "Uplifting Overture",
+        legacyName: "Uplifting Overture",
+        effectSlug: "spell-effect-uplifting-overture",
+        legacyEffectSlug: "spell-effect-uplifting-overture",
+        compendiumUuid: null,
+        icon: "icons/tools/instruments/harp-lap-gold.webp",
+        radius: 60,
+        targetType: "ally",
+        description: "+1 status bonus to skill checks and Will saving throws.",
+        rules: [
+            { key: "FlatModifier", selector: "skill-check", value: 1, type: "status", label: "Uplifting Overture" },
+            { key: "FlatModifier", selector: "will", value: 1, type: "status", label: "Uplifting Overture" }
+        ]
+    },
+    {
+        id: "allegro",
+        name: "Allegro",
+        legacyName: "Allegro",
+        effectSlug: "spell-effect-allegro",
+        legacyEffectSlug: "spell-effect-allegro",
+        compendiumUuid: null,
+        icon: "icons/magic/time/stopwatch-time-slipping-green.webp",
+        radius: 30,
+        targetType: "ally",
+        description: "Target ally is Quickened 1 (can use the extra action to Stride, Strike, or Step).",
+        rules: [
+            { key: "RollOption", domain: "all", option: "quickened" }
+        ]
+    },
+    {
         id: "dirge-of-doom",
         name: "Dirge of Doom",
         legacyName: "Dirge of Doom",
@@ -129,24 +175,140 @@ export const COMPOSITION_CANTRIPS = [
         rules: [
             { key: "Aura", radius: 30, traits: ["auditory", "cantrip", "composition", "emotion", "fear", "mental"], includesSelf: false }
         ]
+    },
+    {
+        id: "song-of-marching",
+        name: "Song of Marching",
+        legacyName: "Song of Marching",
+        effectSlug: "spell-effect-song-of-marching",
+        legacyEffectSlug: "spell-effect-song-of-marching",
+        compendiumUuid: null,
+        icon: "icons/tools/navigation/map-marked-blue.webp",
+        radius: 60,
+        targetType: "ally",
+        description: "Hustle for up to 1 hour without fatigue.",
+        rules: []
+    },
+    {
+        id: "house-of-imaginary-walls",
+        name: "House of Imaginary Walls",
+        legacyName: "House of Imaginary Walls",
+        effectSlug: "spell-effect-house-of-imaginary-walls",
+        legacyEffectSlug: "spell-effect-house-of-imaginary-walls",
+        compendiumUuid: null,
+        icon: "icons/magic/defensive/barrier-shield-dome-blue-purple.webp",
+        radius: 60,
+        targetType: "ally",
+        description: "Create an invisible 10-foot-by-10-foot wall.",
+        rules: []
     }
 ];
 
 /**
+ * Returns available composition cantrips for the actor, prioritizing and dynamically
+ * including any composition cantrips on the actor's character sheet.
+ */
+export function getAvailableCompositionCantrips(actor) {
+    const list = COMPOSITION_CANTRIPS.map(c => {
+        const isKnown = actor?.itemTypes?.spell?.some(s => 
+            s.slug === c.id || 
+            s.slug === c.effectSlug || 
+            s.name.toLowerCase() === c.name.toLowerCase() ||
+            (c.legacyName && s.name.toLowerCase() === c.legacyName.toLowerCase())
+        ) ?? false;
+        return { ...c, isKnown };
+    });
+
+    if (!actor?.itemTypes?.spell) return list;
+
+    for (const spell of actor.itemTypes.spell) {
+        const traits = spell.system?.traits?.value ?? [];
+        const isComposition = traits.includes("composition") || 
+            spell.name.toLowerCase().includes("anthem") || 
+            spell.name.toLowerCase().includes("inspire");
+        const isCantrip = spell.isCantrip || traits.includes("cantrip");
+
+        if (!isComposition || !isCantrip) continue;
+
+        const slug = spell.slug || spell.system?.slug || spell.name.toLowerCase().replace(/[^a-z0-9]/g, "-");
+        const already = list.find(c => 
+            c.id === slug || 
+            c.effectSlug === `spell-effect-${slug}` ||
+            c.name.toLowerCase() === spell.name.toLowerCase() ||
+            (c.legacyName && c.legacyName.toLowerCase() === spell.name.toLowerCase())
+        );
+
+        if (!already) {
+            const rawDesc = spell.system?.description?.value?.replace(/<[^>]*>?/gm, "").trim() || "";
+            const isEnemy = traits.includes("fear") || traits.includes("attack") || rawDesc.toLowerCase().includes("foe");
+            let radius = 60;
+            if (typeof spell.system?.area?.value === "number") {
+                radius = spell.system.area.value;
+            } else if (spell.system?.range?.value) {
+                const parsed = parseInt(spell.system.range.value, 10);
+                if (!isNaN(parsed) && parsed > 0) radius = parsed;
+            }
+
+            list.push({
+                id: slug,
+                name: spell.name,
+                legacyName: null,
+                effectSlug: `spell-effect-${slug}`,
+                legacyEffectSlug: null,
+                compendiumUuid: spell.uuid || null,
+                icon: spell.img || LINGERING_COMPOSITION_MACRO_ICON,
+                radius: radius,
+                targetType: isEnemy ? "enemy" : "ally",
+                description: rawDesc ? rawDesc.slice(0, 110) + "..." : "Composition cantrip.",
+                isKnown: true,
+                rules: []
+            });
+        }
+    }
+
+    // Sort: known cantrips first!
+    list.sort((a, b) => {
+        if (a.isKnown && !b.isKnown) return -1;
+        if (!a.isKnown && b.isKnown) return 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    return list;
+}
+
+/**
  * Calculates straight line distance in feet between two tokens on the canvas.
+ * Uses namespaced foundry.canvas.geometry.Ray (v13+) and canvas.grid helpers.
  */
 function getDistanceBetweenTokens(token1, token2) {
     if (!token1 || !token2 || !canvas?.scene) return 0;
     try {
         const p1 = token1.center ?? token1;
         const p2 = token2.center ?? token2;
-        const ray = new Ray(p1, p2);
-        if (canvas.grid?.measureDistances) {
+
+        // 1. Direct canvas.grid.measureDistance (Foundry v12+)
+        if (typeof canvas.grid?.measureDistance === "function") {
+            return Math.round(canvas.grid.measureDistance(p1, p2));
+        }
+
+        // 2. Direct distance from canvas.grid.measurePath
+        if (typeof canvas.grid?.measurePath === "function") {
+            const measured = canvas.grid.measurePath([p1, p2])?.distance;
+            if (typeof measured === "number") return Math.round(measured);
+        }
+
+        // 3. Namespaced Ray in Foundry v13/v14+
+        const RayClass = foundry?.canvas?.geometry?.Ray ?? globalThis.Ray;
+        const ray = RayClass ? new RayClass(p1, p2) : null;
+        if (ray && canvas.grid?.measureDistances) {
             return Math.round(canvas.grid.measureDistances([{ ray }], { gridSpaces: true })[0]);
         }
+
+        const dx = (p2.x ?? p2.center?.x ?? 0) - (p1.x ?? p1.center?.x ?? 0);
+        const dy = (p2.y ?? p2.center?.y ?? 0) - (p1.y ?? p1.center?.y ?? 0);
         const gridDist = canvas.scene.grid?.distance || 5;
         const gridSize = canvas.scene.grid?.size || 100;
-        return Math.round((Math.hypot(ray.dx, ray.dy) / gridSize) * gridDist);
+        return Math.round((Math.hypot(dx, dy) / gridSize) * gridDist);
     } catch {
         return 0;
     }
@@ -409,8 +571,9 @@ export async function executeLingeringComposition() {
     const partyLevel = actor.level ?? 1;
     let defaultDC = getStandardDC(partyLevel);
 
-    // 5. Initial Detected Targets
-    const defaultCantrip = COMPOSITION_CANTRIPS[0];
+    // 5. Available Cantrips (Standard + Known on Actor)
+    const availableCantrips = getAvailableCompositionCantrips(actor);
+    const defaultCantrip = availableCantrips[0];
     let detectedTargets = getTokensInRange(token, defaultCantrip.radius, defaultCantrip.targetType);
 
     // 6. Build Setup Dialog
@@ -428,8 +591,8 @@ export async function executeLingeringComposition() {
            </div>`
         : "";
 
-    const cantripOptionsHtml = COMPOSITION_CANTRIPS.map((c, idx) => {
-        const knownMark = actor.itemTypes.spell.some(s => s.slug === c.id || s.slug === c.effectSlug || s.name.toLowerCase().includes(c.name.toLowerCase())) ? " ★ (Known)" : "";
+    const cantripOptionsHtml = availableCantrips.map((c, idx) => {
+        const knownMark = c.isKnown ? " ★ (Known)" : "";
         return `<option value="${idx}">${c.name}${knownMark} [${c.radius} ft. emanation]</option>`;
     }).join("");
 
@@ -512,7 +675,7 @@ export async function executeLingeringComposition() {
                 label: "Perform & Cast",
                 callback: async (html) => {
                     const cantripIdx = parseInt(html.find("#lc-cantrip").val(), 10) || 0;
-                    const selectedCantrip = COMPOSITION_CANTRIPS[cantripIdx] || COMPOSITION_CANTRIPS[0];
+                    const selectedCantrip = availableCantrips[cantripIdx] || availableCantrips[0];
                     const chosenDC = parseInt(html.find("#lc-dc").val(), 10) || defaultDC;
                     const applyDirect = html.find("#lc-apply-direct").is(":checked");
 
@@ -530,7 +693,7 @@ export async function executeLingeringComposition() {
         render: (html) => {
             const updateTargetList = () => {
                 const cIdx = parseInt(html.find("#lc-cantrip").val(), 10) || 0;
-                const c = COMPOSITION_CANTRIPS[cIdx] || defaultCantrip;
+                const c = availableCantrips[cIdx] || defaultCantrip;
                 html.find("#lc-cantrip-desc").text(c.description);
 
                 const targets = getTokensInRange(token, c.radius, c.targetType);

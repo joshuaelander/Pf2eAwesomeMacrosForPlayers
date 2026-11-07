@@ -1,6 +1,10 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/7/2026 - Version 1.6.5 - Fixed some bugs. \
+\
+11/7/2026 - Version 1.6.2 - Expanded Lingering Composition to include full standard bard composition cantrips (Triple Time, Uplifting Overture, Inspire Competence, Allegro, Song of Marching, House of Imaginary Walls) and added dynamic sheet discovery to automatically detect, prioritize, and list any unique/custom composition cantrips known by the character. Updated Martial Performance to support extending all new cantrip effects. \
+\
 11/7/2026 - Version 1.6.1 - Updated Lingering Composition to query and apply official PF2e compendium spell effects (pf2e.spell-effects). Fixed Dirge of Doom so the bard is never debuffed by their own chant, and foes receive the native PF2e Frightened 1 condition to avoid redundant non-stacking debuffs. Preserved user's custom image for Martial Performance. \
 \
 11/7/2026 - Version 1.6.0 - Added Lingering Composition macro (with Performance check vs standard level DC, focus point deduction/refund, cantrip selection, aura generation, and direct allied application) and Martial Performance macro (Warrior Muse duration incrementation on active anthems by +1 round). \
