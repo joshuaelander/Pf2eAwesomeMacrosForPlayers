@@ -75,8 +75,8 @@ export async function executeInstructiveStrike() {
             .is-strike-btn:hover { background: rgba(0,0,0,0.15); }
         </style>
         <div style="font-family: 'Signika', sans-serif; margin-bottom: 5px;">
-            <div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(0, 0, 0, 0.04); border-left: 3px solid #1976d2; border-radius: 3px;">
-                <strong>Target:</strong> ${target.name}
+            <div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px;">
+                <strong style="color: #2e7d32;">✓ Target Selected</strong>
             </div>
             <p style="margin-top: 0; margin-bottom: 12px; font-size: 0.95em;">Select your strike and its Multiple Attack Penalty.</p>
     `;
@@ -141,7 +141,7 @@ export async function executeInstructiveStrike() {
                         await ChatMessage.create({
                             user: game.user.id,
                             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-                            content: `<strong>Instructive Strike Hit!</strong><br>${actor.name} hit ${target.name} and is attempting to Recall Knowledge.${bonusText}`
+                            content: `<strong>Instructive Strike Hit!</strong><br>${actor.name} scored a hit and is attempting to Recall Knowledge.${bonusText}`
                         });
 
                         // Pass the calculated bonus directly into the Enhanced Recall Knowledge dialog
@@ -155,7 +155,7 @@ export async function executeInstructiveStrike() {
                         await ChatMessage.create({
                             user: game.user.id,
                             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-                            content: `<strong>Instructive Strike Missed!</strong><br>${actor.name} failed to hit ${target.name}. No Recall Knowledge check is triggered.`
+                            content: `<strong>Instructive Strike Missed!</strong><br>${actor.name} failed to hit the target. No Recall Knowledge check is triggered.`
                         });
                     }
                 });

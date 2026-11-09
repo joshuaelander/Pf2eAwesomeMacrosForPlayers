@@ -38,7 +38,7 @@ export async function executeMonsterHunter() {
         await ChatMessage.create({
             user: game.user.id,
             speaker: ChatMessage.getSpeaker({ token: token }),
-            content: `<strong>${actor.name}</strong> uses @UUID[Compendium.pf2e.actionspf2e.Item.Jyi4gnsAxsE5KxL1]{Hunt Prey} on <strong>${target.name}</strong>!`
+            content: `<strong>${actor.name}</strong> uses @UUID[Compendium.pf2e.actionspf2e.Item.Jyi4gnsAxsE5KxL1]{Hunt Prey}!`
         });
     }
 

@@ -144,7 +144,7 @@ export function mastermindRecall(circumstanceBonus = 0) {
 
                 const rogueEffectData = {
                     type: "effect",
-                    name: `Mastermind's Assessment: ${target.name}`,
+                    name: `Mastermind's Assessment`,
                     img: MASTERMIND_RECALL_MACRO_ICON,
                     system: {
                         slug: rogueEffectSlug,
@@ -155,7 +155,7 @@ export function mastermindRecall(circumstanceBonus = 0) {
                             expiry: "turn-start"
                         },
                         description: {
-                            value: `<p><strong>${target.name}</strong> is off-guard against your attacks due to Mastermind's Assessment.</p>`
+                            value: `<p>Target creature is off-guard against your attacks due to Mastermind's Assessment.</p>`
                         },
                         rules: [
                             {
@@ -181,7 +181,7 @@ export function mastermindRecall(circumstanceBonus = 0) {
                         </header>
                         <div class="card-content">
                             <p style="font-size: 0.9em; border-left: 3px solid #18520b; padding-left: 5px; background: rgba(0,0,0,0.05);">
-                                <em><strong>Effect:</strong> ${target.name} is now Off-Guard to ${actor.name} ${timeString}.</em>
+                                <em><strong>Effect:</strong> The target is now Off-Guard to ${actor.name} ${timeString}.</em>
                             </p>
                         </div>
                     </div>`;

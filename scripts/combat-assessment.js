@@ -122,7 +122,7 @@ export async function executeCombatAssessment() {
                         await ChatMessage.create({
                             user: game.user.id,
                             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-                            content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} hit ${target.name} and is attempting to Recall Knowledge.${bonusText}`
+                            content: `<strong>Combat Assessment Hit!</strong><br>${actor.name} scored a hit and is attempting to Recall Knowledge.${bonusText}`
                         });
 
                         // Pass the calculated bonus directly into the RK dialog!
@@ -134,7 +134,7 @@ export async function executeCombatAssessment() {
                         await ChatMessage.create({
                             user: game.user.id,
                             speaker: ChatMessage.getSpeaker({ actor: actor, token: token }),
-                            content: `<strong>Combat Assessment Missed!</strong><br>${actor.name} failed to hit ${target.name}. No Recall Knowledge check is triggered.`
+                            content: `<strong>Combat Assessment Missed!</strong><br>${actor.name} failed to hit the target. No Recall Knowledge check is triggered.`
                         });
                     }
                 });

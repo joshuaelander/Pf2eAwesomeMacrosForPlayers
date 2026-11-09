@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/9/2026 - Version 1.7.1 - Concealed target creature names and image banners across all player combat and assessment macros (Twin Feint, Double Slice, Flurry of Blows, Magus's Analysis, Combat Assessment, Instructive Strike, Known Weaknesses, Monster Hunter, and Mastermind Rogue's Recall) in setup dialogs and public chat cards to prevent leaking unrevealed creature identities while preserving full targeting automation and damage integration. \
+\
 11/9/2026 - Version 1.7.0 - Added Auto-Upgrade Alchemical Formulas macro for Alchemists (Player Core 2, p. 48) to automatically identify and learn higher-level upgraded formulas (e.g., Bottled Lightning Lesser -> Moderate) up to the character's current level. Includes multi-formula selection dialog, compendium and world item indexing, permission-safe updating, and formatted chat summary cards. Reorganized macro folders with a dedicated 'Crafting' subfolder. \
 \
 11/9/2026 - Version 1.6.6 - Added 'Resistances' question option to Enhanced Recall Knowledge dialog, hints, public chat notifications, and automated player whisper replies. Also added Resistances display to the GM general overview card. \

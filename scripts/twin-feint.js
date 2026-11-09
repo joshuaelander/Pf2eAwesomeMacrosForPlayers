@@ -222,7 +222,7 @@ export async function executeTwinFeint() {
     const targetOffGuardNow = isTargetOffGuard(target?.actor);
     const targetStatusHtml = target
         ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px;">
-             <strong>Target:</strong> ${target.name} ${targetOffGuardNow ? '<span style="color:#2e7d32; font-weight:bold;">(Currently Off-Guard)</span>' : '<span style="color:#d32f2f;">(Will become Off-Guard for Strike 2)</span>'}
+             <strong style="color: #2e7d32;">✓ Target Selected</strong> ${targetOffGuardNow ? '<span style="color:#2e7d32; font-weight:bold;">(Currently Off-Guard)</span>' : '<span style="color:#d32f2f;">(Will become Off-Guard for Strike 2)</span>'}
            </div>`
         : `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.08); border-left: 3px solid #f57c00; border-radius: 3px;">
              <em style="font-size: 0.9em; color: #555;">No target selected! Twin Feint requires both strikes to target the same creature.</em>
@@ -368,7 +368,6 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
     const s2Tag = s2MapIdx === 1 ? "MAP -5/-4" : "MAP -10/-8";
 
     // 1. Post Twin Feint Header to Chat
-    const targetText = target ? ` against <strong>${target.name}</strong>` : "";
     await ChatMessage.create({
         user: game.user.id,
         speaker: ChatMessage.getSpeaker({ actor, token }),
@@ -379,7 +378,7 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
                     <h3>Twin Feint</h3>
                 </header>
                 <div class="card-content">
-                    <p><strong>${actor.name}</strong> attacks with <strong>${strike1.label}</strong> to distract their foe from a second attack coming at a different angle with <strong>${strike2.label}</strong>${targetText}!</p>
+                    <p><strong>${actor.name}</strong> attacks with <strong>${strike1.label}</strong> to distract their foe from a second attack coming at a different angle with <strong>${strike2.label}</strong>!</p>
                     <p><em style="font-size: 0.85em; color: #555;">The target is automatically off-guard against the second attack.</em></p>
                 </div>
             </div>
@@ -537,7 +536,7 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
                         <h3>Twin Feint: Results</h3>
                     </header>
                     <div class="card-content">
-                        <p>Both attacks missed${target ? ` <strong>${target.name}</strong>` : ""}. No damage dealt.</p>
+                        <p>Both attacks missed. No damage dealt.</p>
                     </div>
                 </div>
             `

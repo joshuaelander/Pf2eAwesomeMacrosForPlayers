@@ -99,7 +99,7 @@ async function finishMagusAnalysis(actor, targetActor, targetToken, token, bonus
     if (game.pf2eAwesomePlayerMacros && game.pf2eAwesomePlayerMacros.applyMagusImmunity) {
         const result = await game.pf2eAwesomePlayerMacros.applyMagusImmunity(targetActor);
         if (result === "already_immune") {
-            ui.notifications.warn(`${targetToken.name} is already immune to Magus's Analysis.`);
+            ui.notifications.warn("The target is already immune to Magus's Analysis.");
             return;
         } else if (!result || result.success === false) {
             ui.notifications.error("Failed to apply immunity effect to the target.");
@@ -129,7 +129,7 @@ async function finishMagusAnalysis(actor, targetActor, targetToken, token, bonus
                 <div class="card-content">
                     <p><strong>${actor.name}</strong> instantly recharges their Spellstrike!</p>
                     <p style="font-size: 0.9em; border-left: 3px solid #18520b; padding-left: 5px; background: rgba(0,0,0,0.05);">
-                        <em><strong>Note:</strong> ${targetToken.name} is now temporarily immune to Magus's Analysis for 1 day.</em>
+                        <em><strong>Note:</strong> The target is now temporarily immune to Magus's Analysis for 1 day.</em>
                     </p>
                 </div>
             </div>`

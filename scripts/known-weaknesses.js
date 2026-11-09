@@ -39,7 +39,7 @@ export async function executeKnownWeaknesses() {
         await ChatMessage.create({
             user: game.user.id,
             speaker: ChatMessage.getSpeaker({ token: token }),
-            content: `<strong>${actor.name}</strong> uses @UUID[Compendium.pf2e.actionspf2e.Item.m0f2B7G9eaaTmhFL]{Devise a Stratagem} against <strong>${target.name}</strong>!`
+            content: `<strong>${actor.name}</strong> uses @UUID[Compendium.pf2e.actionspf2e.Item.m0f2B7G9eaaTmhFL]{Devise a Stratagem}!`
         });
     }
 
