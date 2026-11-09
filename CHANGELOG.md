@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/9/2026 - Version 1.6.6 - Added 'Resistances' question option to Enhanced Recall Knowledge dialog, hints, public chat notifications, and automated player whisper replies. Also added Resistances display to the GM general overview card. \
+\
 11/7/2026 - Version 1.6.5 - Fixed some bugs. \
 \
 11/7/2026 - Version 1.6.2 - Expanded Lingering Composition to include full standard bard composition cantrips (Triple Time, Uplifting Overture, Inspire Competence, Allegro, Song of Marching, House of Imaginary Walls) and added dynamic sheet discovery to automatically detect, prioritize, and list any unique/custom composition cantrips known by the character. Updated Martial Performance to support extending all new cantrip effects. \

@@ -264,7 +264,8 @@ async function analyzeCreature(targetActor) {
 
 function getTruthString(qType, truths, otherText) {
     switch (qType) {
-        case 'weaknesses': return truths.weaknesses.length ? `its weakness is ${truths.weaknesses.join(', ')}` : `it has no specific weaknesses`;
+        case 'weaknesses': return truths.weaknesses.length ? (truths.weaknesses.length > 1 ? `its weaknesses are ${truths.weaknesses.join(', ')}` : `its weakness is ${truths.weaknesses[0]}`) : `it has no specific weaknesses`;
+        case 'resistances': return truths.resistances.length ? (truths.resistances.length > 1 ? `its resistances are ${truths.resistances.join(', ')}` : `its resistance is ${truths.resistances[0]}`) : `it has no specific resistances`;
         case 'immunities': return truths.immunities.length ? `it is immune to ${truths.immunities.join(', ')}` : `it has no specific immunities`;
         case 'saves': return `its highest save is ${truths.highestSave} and lowest save is ${truths.lowestSave}`;
         case 'abilities': return truths.abilities.length ? `it has the ability: ${truths.abilities.join(', ')}` : `it has no notable special abilities`;
@@ -277,6 +278,7 @@ function getTruthString(qType, truths, otherText) {
 function getLieString(qType, lie, otherText) {
     switch (qType) {
         case 'weaknesses': return `its weakness is ${lie.fakeWeakness}`;
+        case 'resistances': return `its resistance is ${lie.fakeResistance}`;
         case 'immunities': return `it is immune to ${lie.fakeImmunity}`;
         case 'saves': return `its highest save is ${lie.fakeHighSave} and lowest save is ${lie.fakeLowSave}`;
         case 'abilities': return `it has the ability: ${lie.fakeAbility}`;
@@ -302,14 +304,14 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
     const falseLabel = disableColors ? 'inherit' : '#990000';
 
     if (question === 'all') {
-        const buildGrid = (title, w, i, hs, ls, a) => `
+        const buildGrid = (title, w, r, i, hs, ls, a) => `
             <div style="margin-top: 4px;">
                 <div style="font-weight: bold; border-bottom: 1px solid rgba(0,0,0,0.2); margin-bottom: 4px; padding-bottom: 2px;">${escapeHtml(title)}</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 0.95em; line-height: 1.2;">
                     <div><b style="color:#444;">Weak:</b> ${escapeHtml(w)}</div>
+                    <div><b style="color:#444;">Resist:</b> ${escapeHtml(r)}</div>
                     <div><b style="color:#444;">Immune:</b> ${escapeHtml(i)}</div>
-                    <div><b style="color:#444;">High Save:</b> ${escapeHtml(hs)}</div>
-                    <div><b style="color:#444;">Low Save:</b> ${escapeHtml(ls)}</div>
+                    <div><b style="color:#444;">Saves:</b> High ${escapeHtml(hs)} / Low ${escapeHtml(ls)}</div>
                     <div style="grid-column: span 2;"><b style="color:#444;">Ability:</b> ${escapeHtml(a)}</div>
                 </div>
             </div>`;
@@ -317,6 +319,7 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
         let truthsHtml = buildGrid(
             name,
             truths.weaknesses.join(', ') || 'None',
+            truths.resistances.join(', ') || 'None',
             truths.immunities.join(', ') || 'None',
             truths.highestSave,
             truths.lowestSave,
@@ -325,7 +328,7 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
 
         let liesHtml = lies.map((l, idx) => `
             ${idx > 0 ? '<div style="margin-top: 8px; padding-top: 4px; border-top: 1px dashed rgba(0,0,0,0.2);">' : '<div>'}
-            ${buildGrid(l.fakeName, l.fakeWeakness, l.fakeImmunity, l.fakeHighSave, l.fakeLowSave, l.fakeAbility)}
+            ${buildGrid(l.fakeName, l.fakeWeakness, l.fakeResistance, l.fakeImmunity, l.fakeHighSave, l.fakeLowSave, l.fakeAbility)}
             </div>
         `).join('');
 
@@ -431,7 +434,7 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     `;
     }
 
-    const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
+    const qLabels = { 'weaknesses': 'Weaknesses', 'resistances': 'Resistances', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
     const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
 
     const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} <b style="color:#aa0000;">DC ${dc}</b>` : `<b style="color:#aa0000;">DC ${dc}</b>`) : `Unknown DC`;
@@ -567,7 +570,7 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forced
 
 // --- Handles the public chat message generation based on target status ---
 async function createPublicRecallMessage(actorRolls, hasTarget, question, isGM) {
-    const qLabels = { 'weaknesses': 'Weaknesses', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
+    const qLabels = { 'weaknesses': 'Weaknesses', 'resistances': 'Resistances', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
     const askedStr = (!isGM && hasTarget) ? ` to learn about its <b>${escapeHtml(qLabels[question] || 'General Info')}</b>` : '';
 
     let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content">`;
@@ -597,7 +600,7 @@ async function sendAutoReply(results, question, otherText, analysis) {
 
         // Strip inline colors so as not to metagame the success tier
         if (p.degree === 'Critical Success') {
-            const categories = ['weaknesses', 'immunities', 'saves', 'abilities', 'attacks'].filter(c => c !== question);
+            const categories = ['weaknesses', 'resistances', 'immunities', 'saves', 'abilities', 'attacks'].filter(c => c !== question);
             const extraCat = categories[Math.floor(Math.random() * categories.length)];
 
             html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
@@ -985,6 +988,7 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
         <label>Question:</label>
         <select id="question-select" name="question">
             <option value="weaknesses">Weaknesses</option>
+            <option value="resistances">Resistances</option>
             <option value="immunities">Immunities</option>
             <option value="saves">Lowest/Highest Saves</option>
             <option value="abilities">Special Abilities</option>
