@@ -62,7 +62,7 @@ export async function executeInstructiveStrike() {
     // Filter for ready strikes (melee, unarmed, ranged, or thrown)
     const strikes = actor.system.actions?.filter(a => a.type === "strike" && a.ready) ?? [];
     if (strikes.length === 0) {
-        return ui.notifications.error("No ready strikes found on this character.");
+        return ui.notifications.warn("No ready strikes found on this character.");
     }
 
     // Build the custom UI rows for each strike and its MAP variants

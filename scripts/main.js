@@ -66,6 +66,12 @@ import {
 } from "./hunted-shot.js";
 
 import {
+    executeTwinTakedown,
+    TWIN_TAKEDOWN_MACRO_NAME,
+    TWIN_TAKEDOWN_MACRO_ICON
+} from "./twin-takedown.js";
+
+import {
     openPartyStash,
     OPEN_PARTY_STASH_MACRO_NAME,
     OPEN_PARTY_STASH_MACRO_ICON
@@ -136,6 +142,7 @@ const DESIRED_MACROS = [
     // Combat Subfolder
     { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();`, category: "Combat" },
     { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();`, category: "Combat" },
+    { name: TWIN_TAKEDOWN_MACRO_NAME, icon: TWIN_TAKEDOWN_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinTakedown();`, category: "Combat" },
     { name: DOUBLE_SLICE_MACRO_NAME, icon: DOUBLE_SLICE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeDoubleSlice();`, category: "Combat" },
     { name: TWIN_FEINT_MACRO_NAME, icon: TWIN_FEINT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinFeint();`, category: "Combat" },
     { name: RESET_MOVEMENT_MACRO_NAME, icon: RESET_MOVEMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeResetMovement();`, category: "Combat" },
@@ -367,6 +374,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.mastermindRecall = mastermindRecall;
     game.pf2eAwesomePlayerMacros.executeFlurryOfBlows = executeFlurryOfBlows;
     game.pf2eAwesomePlayerMacros.executeHuntedShot = executeHuntedShot;
+    game.pf2eAwesomePlayerMacros.executeTwinTakedown = executeTwinTakedown;
     game.pf2eAwesomePlayerMacros.openPartyStash = openPartyStash;
     game.pf2eAwesomePlayerMacros.executeInstructiveStrike = executeInstructiveStrike;
     game.pf2eAwesomePlayerMacros.executeDoubleSlice = executeDoubleSlice;

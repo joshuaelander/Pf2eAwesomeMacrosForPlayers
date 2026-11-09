@@ -142,7 +142,7 @@ export async function executeHuntedShot() {
     }
 
     if (availableStrikes.length === 0) {
-        return ui.notifications.error("No ready ranged weapons with reload 0 found on this character.");
+        return ui.notifications.warn("No ready ranged weapons with reload 0 found on this character.");
     }
 
     // 5. Build Initial Setup Dialog

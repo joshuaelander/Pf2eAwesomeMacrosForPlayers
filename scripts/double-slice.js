@@ -149,7 +149,7 @@ export async function executeDoubleSlice() {
     const availableStrikes = actor.system.actions?.filter(a => a.type === "strike" && isOneHandedMeleeStrike(a)) ?? [];
 
     if (availableStrikes.length === 0) {
-        return ui.notifications.error("No ready one-handed melee weapons found on this character.");
+        return ui.notifications.warn("No ready one-handed melee weapons found on this character.");
     }
 
     // 5. Determine default weapon ordering

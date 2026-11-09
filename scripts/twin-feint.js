@@ -211,7 +211,7 @@ export async function executeTwinFeint() {
     }
 
     if (availableStrikes.length < 2) {
-        return ui.notifications.error("Twin Feint requires wielding two melee weapons, each in a different hand.");
+        return ui.notifications.warn("Twin Feint requires wielding two melee weapons, each in a different hand.");
     }
 
     // Default: Weapon 1 is index 0, Weapon 2 is index 1
@@ -295,7 +295,7 @@ export async function executeTwinFeint() {
                     const startingMap = parseInt(html.find("#tf-starting-map").val(), 10);
 
                     if (idx1 === idx2) {
-                        ui.notifications.error("Twin Feint requires using two different weapons!");
+                        ui.notifications.warn("Twin Feint requires using two different weapons!");
                         return;
                     }
 

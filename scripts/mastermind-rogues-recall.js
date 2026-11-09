@@ -96,7 +96,7 @@ export function mastermindRecall(circumstanceBonus = 0) {
     // 1. Verify the actor actually has the Mastermind Racket
     const hasMastermind = actor.items.some(i => i.slug === 'mastermind' || i.slug === 'mastermind-racket');
     if (!hasMastermind && !game.user.isGM) {
-        ui.notifications.error(`${actor.name} does not possess the Mastermind Racket!`);
+        ui.notifications.warn(`${actor.name} does not possess the Mastermind Racket!`);
         return;
     }
 

@@ -36,7 +36,7 @@ export async function executeMagusAnalysis() {
     const targetActor = targetToken.actor;
 
     if (!targetActor) {
-        return ui.notifications.error("Target has no valid actor.");
+        return ui.notifications.warn("Target has no valid actor.");
     }
 
     // Check for the Magus's Analysis feat

@@ -78,7 +78,7 @@ export async function executeFlurryOfBlows() {
     }
 
     if (availableStrikes.length === 0) {
-        return ui.notifications.error("No ready unarmed or melee strikes found on this character.");
+        return ui.notifications.warn("No ready unarmed or melee strikes found on this character.");
     }
 
     // 4. Build Initial Setup Dialog (Strike selection & Starting MAP)

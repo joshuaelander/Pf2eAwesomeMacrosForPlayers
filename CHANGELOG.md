@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/9/2026 - Version 1.7.2 - Added Twin Takedown macro for dual-wielding Rangers (Player Core, pg. 157) to execute two strikes against their hunted prey (one with each wielded melee weapon), progressing MAP normally with Flurry Hunter's Edge support, dynamic setup dialog with live modifier previews, secret target preservation, and combined damage calculation on hits for resistances and weaknesses. \
+\
 11/9/2026 - Version 1.7.1 - Concealed target creature names and image banners across all player combat and assessment macros (Twin Feint, Double Slice, Flurry of Blows, Magus's Analysis, Combat Assessment, Instructive Strike, Known Weaknesses, Monster Hunter, and Mastermind Rogue's Recall) in setup dialogs and public chat cards to prevent leaking unrevealed creature identities while preserving full targeting automation and damage integration. \
 \
 11/9/2026 - Version 1.7.0 - Added Auto-Upgrade Alchemical Formulas macro for Alchemists (Player Core 2, p. 48) to automatically identify and learn higher-level upgraded formulas (e.g., Bottled Lightning Lesser -> Moderate) up to the character's current level. Includes multi-formula selection dialog, compendium and world item indexing, permission-safe updating, and formatted chat summary cards. Reorganized macro folders with a dedicated 'Crafting' subfolder. \
