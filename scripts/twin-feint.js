@@ -30,7 +30,7 @@ export const TWIN_FEINT_MACRO_ICON = "icons/skills/melee/weapons-crossed-daggers
 /**
  * Helper to capture the next chat message of a specific type from an actor.
  */
-function captureNextRollMessage(actorId, rollType, timeoutMs = 12000) {
+function captureNextRollMessage(actorId, rollType, timeoutMs = 120000) {
     return new Promise((resolve) => {
         const hookId = Hooks.on("createChatMessage", (msg) => {
             if (msg.actor?.id !== actorId) return;
@@ -392,7 +392,13 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
         target: target?.object ?? target,
         extraRollOptions: ["action:twin-feint"]
     });
-    const attack1Msg = await attack1Promise;
+    let attack1Msg = await attack1Promise;
+    if (!attack1Msg) {
+        attack1Msg = game.messages.contents
+            .slice(-10)
+            .reverse()
+            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "attack-roll") ?? null;
+    }
 
     if (!target && attack1Msg?.target?.token?.object) {
         target = attack1Msg.target.token.object;
@@ -440,7 +446,13 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
             await removeOffGuardEffect(actor, attackEffectId);
         }
     }
-    const attack2Msg = await attack2Promise;
+    let attack2Msg = await attack2Promise;
+    if (!attack2Msg) {
+        attack2Msg = game.messages.contents
+            .slice(-10)
+            .reverse()
+            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "attack-roll" && m.id !== attack1Msg?.id) ?? null;
+    }
 
     if (!target && attack2Msg?.target?.token?.object) {
         target = attack2Msg.target.token.object;
@@ -450,16 +462,76 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
     await new Promise(r => setTimeout(r, 1200));
 
     // 4. Parse detected outcomes
-    const parseOutcome = (msg) => {
-        const outcome = msg?.flags?.pf2e?.context?.outcome;
-        if (outcome === "criticalSuccess") return "crit";
-        if (outcome === "success") return "hit";
-        if (outcome === "failure" || outcome === "criticalFailure") return "miss";
-        return "hit";
+    const parseOutcome = (msg, isStrike2 = false) => {
+        if (!msg) return "hit";
+        const liveMsg = (msg.id ? game.messages.get(msg.id) : null) ?? msg;
+
+        // 1. Check live message content / HTML for rendered degree of success (Toolbelt Target Helper, PF2e card, etc.)
+        const content = (liveMsg.content || "") + (liveMsg.flavor || "");
+        if (content.includes("criticalSuccess") || content.includes("Critical Hit") || content.includes("critical-hit")) {
+            return "crit";
+        }
+        if (content.includes("criticalFailure") || content.includes("Critical Miss") || content.includes("critical-miss")) {
+            return "miss";
+        }
+
+        // 2. Check pf2e context outcome
+        const contextOutcome = liveMsg.flags?.pf2e?.context?.outcome;
+        let baseOutcome = null;
+        if (contextOutcome === "criticalSuccess") baseOutcome = "crit";
+        else if (contextOutcome === "success") baseOutcome = "hit";
+        else if (contextOutcome === "failure" || contextOutcome === "criticalFailure") baseOutcome = "miss";
+
+        // 3. Check pf2e-toolbelt targetHelper flags if present
+        const toolbeltTargets = liveMsg.flags?.["pf2e-toolbelt"]?.targetHelper?.targets 
+            ?? liveMsg.flags?.["pf2e-toolbelt"]?.targets;
+        if (toolbeltTargets && typeof toolbeltTargets === "object") {
+            for (const tData of Object.values(toolbeltTargets)) {
+                const deg = tData?.degree ?? tData?.result ?? tData?.outcome;
+                if (deg === "criticalSuccess" || deg === 3 || deg === "crit") return "crit";
+                if (deg === "success" || deg === 2 || deg === "hit") baseOutcome = baseOutcome ?? "hit";
+                if (deg === "failure" || deg === "criticalFailure" || deg === 1 || deg === 0) baseOutcome = baseOutcome ?? "miss";
+            }
+        }
+
+        // 4. Mathematical verification against target AC (crucial for Twin Feint Strike 2 off-guard)
+        const roll = liveMsg.rolls?.[0];
+        const total = roll?.total;
+        const targetActor = target?.actor;
+        const baseAc = targetActor?.attributes?.ac?.value ?? targetActor?.system?.attributes?.ac?.value;
+
+        if (typeof total === "number" && typeof baseAc === "number") {
+            let effectiveAc = baseAc;
+            if (isStrike2) {
+                const alreadyOffGuard = isTargetOffGuard(targetActor);
+                if (!alreadyOffGuard) {
+                    effectiveAc = Math.max(0, baseAc - 2);
+                }
+            }
+
+            const diff = total - effectiveAc;
+            let mathDegree = 1; // 0: crit fail, 1: fail, 2: success, 3: crit success
+            if (diff >= 10) mathDegree = 3;
+            else if (diff >= 0) mathDegree = 2;
+            else if (diff <= -10) mathDegree = 0;
+            else mathDegree = 1;
+
+            // Apply natural 20 / natural 1 step adjustments
+            const d20Die = roll.dice?.find(d => d.faces === 20);
+            const d20Result = d20Die?.results?.find(r => r.active)?.result;
+            if (d20Result === 20) mathDegree = Math.min(3, mathDegree + 1);
+            else if (d20Result === 1) mathDegree = Math.max(0, mathDegree - 1);
+
+            if (mathDegree === 3) return "crit";
+            if (mathDegree === 2) return "hit";
+            if (mathDegree <= 1) return "miss";
+        }
+
+        return baseOutcome ?? "hit";
     };
 
-    const detected1 = parseOutcome(attack1Msg);
-    const detected2 = parseOutcome(attack2Msg);
+    const detected1 = parseOutcome(attack1Msg, false);
+    const detected2 = parseOutcome(attack2Msg, true);
 
     const strike1Summary = attack1Msg?.rolls?.[0]?.total ? ` (Total: ${attack1Msg.rolls[0].total})` : "";
     const strike2Summary = attack2Msg?.rolls?.[0]?.total ? ` (Total: ${attack2Msg.rolls[0].total})` : "";
@@ -576,12 +648,26 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
             }
         }
 
+        if (attackContext) {
+            attackContext.skipDialog = true;
+        }
+
+        const skipDialogEvent = {
+            shiftKey: !!globalThis.game?.user?.settings?.showDamageDialogs,
+            ctrlKey: false,
+            metaKey: false,
+            preventDefault: () => {},
+            stopPropagation: () => {}
+        };
+
         const rollArgs = {
             checkContext: attackContext,
             target: targetObj,
             outcome: isCrit ? "criticalSuccess" : "success",
             extraRollOptions: extraOptions,
-            options: extraOptions
+            options: extraOptions,
+            skipDialog: true,
+            event: skipDialogEvent
         };
 
         try {
@@ -592,7 +678,8 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
             }
         } catch (err) {
             console.warn(`PF2e Twin Feint | Error rolling damage for ${strike.label}, falling back`, err);
-            return isCrit ? await strike.critical() : await strike.damage();
+            const fallbackArgs = { skipDialog: true, event: skipDialogEvent };
+            return isCrit ? await strike.critical(fallbackArgs) : await strike.damage(fallbackArgs);
         }
     };
 

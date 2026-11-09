@@ -329,8 +329,14 @@ Hooks.once('init', () => {
 });
 
 // Hook to handle the "Create Actor" button on the chat card for players
-Hooks.on("renderChatMessage", (message, html, data) => {
-    handlePlayerCreateButton(message, html, data);
+// Uses modern renderChatMessageHTML on Foundry v13+ to avoid deprecation warnings
+const renderChatHookName = (globalThis.game?.release?.generation >= 13 || Number(globalThis.game?.version?.split(".")[0]) >= 13)
+    ? "renderChatMessageHTML"
+    : "renderChatMessage";
+
+Hooks.on(renderChatHookName, (message, html, data) => {
+    const $html = (html instanceof HTMLElement) ? $(html) : html;
+    handlePlayerCreateButton(message, $html, data);
 });
 
 // Helper to record token position at turn start for reliable movement resets

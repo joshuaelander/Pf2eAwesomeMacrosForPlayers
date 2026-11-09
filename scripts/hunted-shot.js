@@ -22,7 +22,7 @@ export const HUNTED_SHOT_MACRO_ICON = "icons/skills/ranged/arrow-flying-white-bl
 /**
  * Helper to capture the next chat message of a specific type from an actor.
  */
-function captureNextRollMessage(actorId, rollType, timeoutMs = 12000) {
+function captureNextRollMessage(actorId, rollType, timeoutMs = 120000) {
     return new Promise((resolve) => {
         const hookId = Hooks.on("createChatMessage", (msg) => {
             if (msg.actor?.id !== actorId) return;
@@ -75,6 +75,71 @@ function getStrikeMapPenalty(strike, mapIndex) {
     const isAgile = traits.includes("agile");
     if (mapIndex === 1) return isAgile ? -4 : -5;
     return isAgile ? -8 : -10;
+}
+
+/**
+ * Extracts the clean dice/flat formula for a persistent damage instance (e.g., "1d6", "2d4 + 2", "3").
+ */
+function extractPersistentFormula(inst) {
+    if (!inst) return "";
+
+    // 1. PF2e DamageInstance exposes head.expression which contains the exact dice/numeric expression without flavor
+    let raw = inst.head?.expression || inst.head?.formula;
+
+    // 2. Fallbacks if head is not directly available
+    if (!raw) {
+        raw = inst.formula || inst._formula || inst.expression;
+    }
+    if (!raw && inst.terms && Array.isArray(inst.terms)) {
+        raw = inst.terms
+            .map(t => t.expression || t.formula || (typeof t.total === "number" ? `${t.total}` : (typeof t.number === "number" ? `${t.number}` : "")))
+            .join(" ")
+            .trim();
+    }
+    if (!raw && typeof inst.total === "number" && inst.total > 0) {
+        raw = `${inst.total}`;
+    }
+    if (!raw) return "";
+
+    // 3. Strip bracketed tags e.g. [bleed], [persistent,bleed]
+    let cleaned = raw.replace(/\[.*?\]/g, "").trim();
+
+    // 4. Extract strictly valid dice/math tokens (e.g. 1d6, 2, +, -), completely stripping descriptive words like 'bleed'
+    const mathTokens = cleaned.match(/(\d*d\d+|\d+|[+\-*/()])/gi);
+    if (mathTokens && mathTokens.length > 0) {
+        cleaned = mathTokens.join(" ").trim();
+    } else if (typeof inst.total === "number" && inst.total > 0) {
+        cleaned = `${inst.total}`;
+    } else {
+        cleaned = "";
+    }
+
+    return cleaned;
+}
+
+/**
+ * Calculates a numerical estimate of formula value to determine the larger persistent damage.
+ */
+function getFormulaAverage(formula) {
+    if (!formula) return 0;
+    try {
+        let avg = 0;
+        const diceMatches = formula.matchAll(/(\d+)d(\d+)/gi);
+        for (const m of diceMatches) {
+            const count = parseInt(m[1], 10) || 1;
+            const sides = parseInt(m[2], 10) || 6;
+            avg += count * (sides + 1) / 2;
+        }
+        const flatMatches = formula.replace(/\d+d\d+/gi, "").match(/\d+/g);
+        if (flatMatches) {
+            for (const f of flatMatches) {
+                avg += parseInt(f, 10) || 0;
+            }
+        }
+        return avg;
+    } catch {
+        return 0;
+    }
 }
 
 /**
@@ -312,7 +377,13 @@ async function runHuntedShotSequence(actor, token, target, strike1, strike2, sta
     reassertTarget(target);
     const attack1Promise = captureNextRollMessage(actor.id, "attack-roll");
     await strike1.variants[map1Index].roll({ target: target?.object ?? target });
-    const attack1Msg = await attack1Promise;
+    let attack1Msg = await attack1Promise;
+    if (!attack1Msg) {
+        attack1Msg = game.messages.contents
+            .slice(-10)
+            .reverse()
+            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "attack-roll") ?? null;
+    }
 
     if (!target && attack1Msg?.target?.token?.object) {
         target = attack1Msg.target.token.object;
@@ -325,7 +396,13 @@ async function runHuntedShotSequence(actor, token, target, strike1, strike2, sta
     reassertTarget(target);
     const attack2Promise = captureNextRollMessage(actor.id, "attack-roll");
     await strike2.variants[map2Index].roll({ target: target?.object ?? target });
-    const attack2Msg = await attack2Promise;
+    let attack2Msg = await attack2Promise;
+    if (!attack2Msg) {
+        attack2Msg = game.messages.contents
+            .slice(-10)
+            .reverse()
+            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "attack-roll" && m.id !== attack1Msg?.id) ?? null;
+    }
 
     if (!target && attack2Msg?.target?.token?.object) {
         target = attack2Msg.target.token.object;
@@ -336,11 +413,62 @@ async function runHuntedShotSequence(actor, token, target, strike1, strike2, sta
 
     // 4. Parse detected outcomes
     const parseOutcome = (msg) => {
-        const outcome = msg?.flags?.pf2e?.context?.outcome;
-        if (outcome === "criticalSuccess") return "crit";
-        if (outcome === "success") return "hit";
-        if (outcome === "failure" || outcome === "criticalFailure") return "miss";
-        return "hit";
+        if (!msg) return "hit";
+        const liveMsg = (msg.id ? game.messages.get(msg.id) : null) ?? msg;
+
+        // 1. Check live message content / HTML for rendered degree of success (Toolbelt Target Helper, PF2e card, etc.)
+        const content = (liveMsg.content || "") + (liveMsg.flavor || "");
+        if (content.includes("criticalSuccess") || content.includes("Critical Hit") || content.includes("critical-hit")) {
+            return "crit";
+        }
+        if (content.includes("criticalFailure") || content.includes("Critical Miss") || content.includes("critical-miss")) {
+            return "miss";
+        }
+
+        // 2. Check pf2e context outcome
+        const contextOutcome = liveMsg.flags?.pf2e?.context?.outcome;
+        let baseOutcome = null;
+        if (contextOutcome === "criticalSuccess") baseOutcome = "crit";
+        else if (contextOutcome === "success") baseOutcome = "hit";
+        else if (contextOutcome === "failure" || contextOutcome === "criticalFailure") baseOutcome = "miss";
+
+        // 3. Check pf2e-toolbelt targetHelper flags if present
+        const toolbeltTargets = liveMsg.flags?.["pf2e-toolbelt"]?.targetHelper?.targets 
+            ?? liveMsg.flags?.["pf2e-toolbelt"]?.targets;
+        if (toolbeltTargets && typeof toolbeltTargets === "object") {
+            for (const tData of Object.values(toolbeltTargets)) {
+                const deg = tData?.degree ?? tData?.result ?? tData?.outcome;
+                if (deg === "criticalSuccess" || deg === 3 || deg === "crit") return "crit";
+                if (deg === "success" || deg === 2 || deg === "hit") baseOutcome = baseOutcome ?? "hit";
+                if (deg === "failure" || deg === "criticalFailure" || deg === 1 || deg === 0) baseOutcome = baseOutcome ?? "miss";
+            }
+        }
+
+        // 4. Mathematical verification against target AC
+        const roll = liveMsg.rolls?.[0];
+        const total = roll?.total;
+        const targetActor = target?.actor;
+        const baseAc = targetActor?.attributes?.ac?.value ?? targetActor?.system?.attributes?.ac?.value;
+
+        if (typeof total === "number" && typeof baseAc === "number") {
+            const diff = total - baseAc;
+            let mathDegree = 1;
+            if (diff >= 10) mathDegree = 3;
+            else if (diff >= 0) mathDegree = 2;
+            else if (diff <= -10) mathDegree = 0;
+            else mathDegree = 1;
+
+            const d20Die = roll.dice?.find(d => d.faces === 20);
+            const d20Result = d20Die?.results?.find(r => r.active)?.result;
+            if (d20Result === 20) mathDegree = Math.min(3, mathDegree + 1);
+            else if (d20Result === 1) mathDegree = Math.max(0, mathDegree - 1);
+
+            if (mathDegree === 3) return "crit";
+            if (mathDegree === 2) return "hit";
+            if (mathDegree <= 1) return "miss";
+        }
+
+        return baseOutcome ?? "hit";
     };
 
     const detected1 = parseOutcome(attack1Msg);
@@ -410,13 +538,26 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
     const rollSingleStrikeDamage = async (strike, outcome, attackMsg) => {
         reassertTarget(target);
         const isCrit = outcome === "crit";
-        const attackContext = attackMsg?.flags?.pf2e?.context ?? null;
+        const attackContext = attackMsg?.flags?.pf2e?.context ? deepClone(attackMsg.flags.pf2e.context) : null;
+        if (attackContext) {
+            attackContext.skipDialog = true;
+        }
         const targetObj = target?.object ?? target ?? null;
+
+        const skipDialogEvent = {
+            shiftKey: !!globalThis.game?.user?.settings?.showDamageDialogs,
+            ctrlKey: false,
+            metaKey: false,
+            preventDefault: () => {},
+            stopPropagation: () => {}
+        };
 
         const rollArgs = {
             checkContext: attackContext,
             target: targetObj,
-            outcome: isCrit ? "criticalSuccess" : "success"
+            outcome: isCrit ? "criticalSuccess" : "success",
+            skipDialog: true,
+            event: skipDialogEvent
         };
 
         try {
@@ -427,7 +568,8 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
             }
         } catch (err) {
             console.warn("PF2e Hunted Shot | Error rolling strike with rollArgs, falling back to default", err);
-            return isCrit ? await strike.critical() : await strike.damage();
+            const fallbackArgs = { skipDialog: true, event: skipDialogEvent };
+            return isCrit ? await strike.critical(fallbackArgs) : await strike.damage(fallbackArgs);
         }
     };
 
@@ -466,7 +608,13 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
     // 1. Roll Damage 1 with full context and target
     const dmg1Promise = captureNextRollMessage(actor.id, "damage-roll");
     await rollSingleStrikeDamage(strike1, outcome1, attack1Msg);
-    const dmg1Msg = await dmg1Promise;
+    let dmg1Msg = await dmg1Promise;
+    if (!dmg1Msg) {
+        dmg1Msg = game.messages.contents
+            .slice(-10)
+            .reverse()
+            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "damage-roll") ?? null;
+    }
 
     // Pause for dice animations
     await new Promise(r => setTimeout(r, 1500));
@@ -474,7 +622,13 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
     // 2. Roll Damage 2 with full context and target
     const dmg2Promise = captureNextRollMessage(actor.id, "damage-roll");
     await rollSingleStrikeDamage(strike2, outcome2, attack2Msg);
-    const dmg2Msg = await dmg2Promise;
+    let dmg2Msg = await dmg2Promise;
+    if (!dmg2Msg) {
+        dmg2Msg = game.messages.contents
+            .slice(-10)
+            .reverse()
+            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "damage-roll" && m.id !== dmg1Msg?.id) ?? null;
+    }
 
     // Pause for dice animations
     await new Promise(r => setTimeout(r, 1200));
@@ -483,35 +637,72 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
     const roll1 = dmg1Msg?.rolls?.[0];
     const roll2 = dmg2Msg?.rolls?.[0];
 
-    const combinedByType = {};
+    const directByType = {};
+    const persistentByType = {};
 
     const collectDamage = (roll, fallbackStrike) => {
         if (!roll) return;
         if (roll.instances && roll.instances.length > 0) {
             for (const inst of roll.instances) {
-                const type = inst.persistent ? `${inst.type},persistent` : (inst.type || "untyped");
-                combinedByType[type] = (combinedByType[type] || 0) + inst.total;
+                if (inst.persistent) {
+                    const formula = extractPersistentFormula(inst);
+                    if (!formula) continue;
+                    const type = inst.type || "bleed";
+                    const avg = typeof inst.expectedValue === "number" ? inst.expectedValue : getFormulaAverage(formula);
+                    if (!persistentByType[type] || avg > getFormulaAverage(persistentByType[type])) {
+                        persistentByType[type] = formula;
+                    }
+                } else {
+                    const type = inst.type || "untyped";
+                    directByType[type] = (directByType[type] || 0) + (inst.total ?? 0);
+                }
             }
         } else {
             const type = fallbackStrike.item?.system?.damage?.damageType || "piercing";
-            combinedByType[type] = (combinedByType[type] || 0) + (roll.total ?? 0);
+            directByType[type] = (directByType[type] || 0) + (roll.total ?? 0);
         }
     };
 
     collectDamage(roll1, strike1);
     collectDamage(roll2, strike2);
 
-    const formulaParts = Object.entries(combinedByType).map(([type, total]) => `${total}[${type}]`);
+    const formulaParts = [];
+    for (const [type, total] of Object.entries(directByType)) {
+        if (total > 0) formulaParts.push(`${total}[${type}]`);
+    }
+    for (const [type, formula] of Object.entries(persistentByType)) {
+        formulaParts.push(`${formula}[${type},persistent]`);
+    }
+
     const combinedFormula = formulaParts.join(", ");
-    const totalDamage = Object.values(combinedByType).reduce((a, b) => a + b, 0);
+    const totalDamage = Object.values(directByType).reduce((a, b) => a + b, 0);
 
     const map1Index = Math.min(startingMap, 2);
     const map2Index = Math.min(startingMap + 1, 2);
     const map1Tag = map1Index === 0 ? "No MAP" : `MAP ${getStrikeMapPenalty(strike1, map1Index)}`;
     const map2Tag = `MAP ${getStrikeMapPenalty(strike2, map2Index)}`;
 
-    const breakdown1 = `${strike1.label} (${outcome1 === "crit" ? "Critical Hit" : "Hit"}, ${map1Tag}): ${roll1?.total ?? 0}`;
-    const breakdown2 = `${strike2.label} (${outcome2 === "crit" ? "Critical Hit" : "Hit"}, ${map2Tag}): ${roll2?.total ?? 0}`;
+    const formatRollBreakdown = (strike, outcome, tag, roll) => {
+        const directTotal = roll?.total ?? 0;
+        const outcomeLabel = outcome === "crit" ? "Critical Hit" : "Hit";
+        let text = `${strike.label} (${outcomeLabel}, ${tag}): ${directTotal}`;
+        const persistentInstances = roll?.instances?.filter(i => i.persistent) ?? [];
+        if (persistentInstances.length > 0) {
+            const pStrings = persistentInstances
+                .map(i => {
+                    const formula = extractPersistentFormula(i);
+                    return formula ? `${formula} persistent ${i.type}` : null;
+                })
+                .filter(Boolean);
+            if (pStrings.length > 0) {
+                text += ` (+ ${pStrings.join(", ")})`;
+            }
+        }
+        return text;
+    };
+
+    const breakdown1 = formatRollBreakdown(strike1, outcome1, map1Tag, roll1);
+    const breakdown2 = formatRollBreakdown(strike2, outcome2, map2Tag, roll2);
 
     // Target information extraction for flags and display
     reassertTarget(target);
@@ -560,6 +751,10 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
         combinedFlags["pf2e-target-damage"] = deepClone(dmg1Msg.flags["pf2e-target-damage"]);
     }
 
+    const persistentSummary = Object.keys(persistentByType).length > 0
+        ? ` (+ ${Object.entries(persistentByType).map(([t, f]) => `${f} persistent ${t}`).join(", ")})`
+        : "";
+
     const cardFlavorHtml = `
         <div class="pf2e chat-card">
             <header class="card-header flexrow">
@@ -573,7 +768,7 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
                     • ${breakdown2}
                 </p>
                 <p style="font-size: 0.85em; color: #666; font-style: italic; margin: 0 0 4px 0;">
-                    Total combined: <strong>${totalDamage}</strong>.
+                    Total combined: <strong>${totalDamage}</strong>${persistentSummary}.
                 </p>
             </div>
         </div>
