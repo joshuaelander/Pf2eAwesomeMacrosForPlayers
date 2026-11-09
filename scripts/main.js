@@ -110,6 +110,13 @@ import {
     extendAnthemDurationAsGM
 } from "./martial-performance.js";
 
+import {
+    executeAutoUpgradeFormulas,
+    AUTO_UPGRADE_FORMULAS_MACRO_NAME,
+    AUTO_UPGRADE_FORMULAS_MACRO_ICON,
+    updateActorFormulasAsGM
+} from "./auto-upgrade-formulas.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -133,7 +140,10 @@ const DESIRED_MACROS = [
     { name: TWIN_FEINT_MACRO_NAME, icon: TWIN_FEINT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinFeint();`, category: "Combat" },
     { name: RESET_MOVEMENT_MACRO_NAME, icon: RESET_MOVEMENT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeResetMovement();`, category: "Combat" },
     { name: LINGERING_COMPOSITION_MACRO_NAME, icon: LINGERING_COMPOSITION_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeLingeringComposition();`, category: "Combat" },
-    { name: MARTIAL_PERFORMANCE_MACRO_NAME, icon: MARTIAL_PERFORMANCE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMartialPerformance();`, category: "Combat" }
+    { name: MARTIAL_PERFORMANCE_MACRO_NAME, icon: MARTIAL_PERFORMANCE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMartialPerformance();`, category: "Combat" },
+
+    // Crafting Subfolder
+    { name: AUTO_UPGRADE_FORMULAS_MACRO_NAME, icon: AUTO_UPGRADE_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas();`, category: "Crafting" }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -199,14 +209,16 @@ async function syncMacros() {
     // Create or retrieve subfolders for organization
     const rkFolder = await getOrCreateFolder("Recall Knowledge", 'Macro', rootFolder.id, "#1976d2");
     const combatFolder = await getOrCreateFolder("Combat", 'Macro', rootFolder.id, "#b71c1c");
+    const craftingFolder = await getOrCreateFolder("Crafting", 'Macro', rootFolder.id, "#2e7d32");
 
     const categoryFolders = {
         "Recall Knowledge": rkFolder,
-        "Combat": combatFolder
+        "Combat": combatFolder,
+        "Crafting": craftingFolder
     };
 
     const desiredNames = DESIRED_MACROS.map(m => m.name);
-    const moduleFolderIds = [rootFolder?.id, rkFolder?.id, combatFolder?.id].filter(Boolean);
+    const moduleFolderIds = [rootFolder?.id, rkFolder?.id, combatFolder?.id, craftingFolder?.id].filter(Boolean);
 
     // Identify module macros: by module flag, or by name matching a desired macro in our folders/root
     const existingMacros = game.macros.filter(m => {
@@ -362,6 +374,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeResetMovement = executeResetMovement;
     game.pf2eAwesomePlayerMacros.executeLingeringComposition = executeLingeringComposition;
     game.pf2eAwesomePlayerMacros.executeMartialPerformance = executeMartialPerformance;
+    game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas = executeAutoUpgradeFormulas;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
@@ -452,6 +465,9 @@ Hooks.once('ready', async () => {
         // 6. Martial Performance Socket
         playerModuleSocket.register("extendAnthemDuration", extendAnthemDurationAsGM);
 
+        // 7. Auto-Upgrade Formulas Socket
+        playerModuleSocket.register("updateActorFormulas", updateActorFormulasAsGM);
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
@@ -523,6 +539,16 @@ Hooks.once('ready', async () => {
         } catch (error) {
             console.error("PF2e Awesome Macros For Players | Error extending anthem duration as GM:", error);
             return null;
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.updateActorFormulas = async (actorUuid, formulas) => {
+        if (!playerModuleSocket) return false;
+        try {
+            return await playerModuleSocket.executeAsGM("updateActorFormulas", actorUuid, formulas);
+        } catch (error) {
+            console.error("PF2e Awesome Macros For Players | Error updating formulas as GM:", error);
+            return false;
         }
     };
 

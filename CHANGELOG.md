@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/9/2026 - Version 1.7.0 - Added Auto-Upgrade Alchemical Formulas macro for Alchemists (Player Core 2, p. 48) to automatically identify and learn higher-level upgraded formulas (e.g., Bottled Lightning Lesser -> Moderate) up to the character's current level. Includes multi-formula selection dialog, compendium and world item indexing, permission-safe updating, and formatted chat summary cards. Reorganized macro folders with a dedicated 'Crafting' subfolder. \
+\
 11/9/2026 - Version 1.6.6 - Added 'Resistances' question option to Enhanced Recall Knowledge dialog, hints, public chat notifications, and automated player whisper replies. Also added Resistances display to the GM general overview card. \
 \
 11/7/2026 - Version 1.6.5 - Fixed some bugs. \
