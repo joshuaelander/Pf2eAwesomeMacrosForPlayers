@@ -153,7 +153,7 @@ export const COMPOSITION_CANTRIPS = [
         effectSlug: "spell-effect-allegro",
         legacyEffectSlug: "spell-effect-allegro",
         compendiumUuid: null,
-        icon: "icons/magic/time/stopwatch-time-slipping-green.webp",
+        icon: "icons/magic/time/hourglass-yellow-green.webp",
         radius: 30,
         targetType: "ally",
         description: "Target ally is Quickened 1 (can use the extra action to Stride, Strike, or Step).",

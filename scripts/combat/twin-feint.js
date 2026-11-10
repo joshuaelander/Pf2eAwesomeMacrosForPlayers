@@ -27,7 +27,7 @@
 export const TWIN_FEINT_MACRO_NAME = "Twin Feint";
 export const TWIN_FEINT_MACRO_ICON = "icons/skills/melee/weapons-crossed-daggers-orange.webp";
 
-import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "./constants.js";
+import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "../constants.js";
 
 /**
  * Helper to capture the next chat message of a specific type from an actor.

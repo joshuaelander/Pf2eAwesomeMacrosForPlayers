@@ -28,7 +28,7 @@
 export const DOUBLE_SLICE_MACRO_NAME = "Double Slice";
 export const DOUBLE_SLICE_MACRO_ICON = "icons/skills/melee/weapons-crossed-swords-yellow.webp";
 
-import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "./constants.js";
+import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "../constants.js";
 
 /**
  * Helper to capture the next chat message of a specific type from an actor.

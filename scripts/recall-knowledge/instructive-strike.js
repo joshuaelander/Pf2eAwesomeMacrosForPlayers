@@ -19,7 +19,7 @@
 export const INSTRUCTIVE_STRIKE_MACRO_NAME = "Instructive Strike";
 export const INSTRUCTIVE_STRIKE_MACRO_ICON = "icons/skills/melee/strike-dagger-arcane-pink.webp";
 
-import { DEGREE, ROLL_TYPE } from "./constants.js";
+import { DEGREE, ROLL_TYPE } from "../constants.js";
 
 export async function executeInstructiveStrike() {
     // Ensure a token/actor is selected, or default to the player's assigned character

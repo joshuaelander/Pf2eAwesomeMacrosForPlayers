@@ -11,7 +11,7 @@
 export const COMBAT_ASSESSMENT_MACRO_NAME = "Combat Assessment";
 export const COMBAT_ASSESSMENT_MACRO_ICON = "icons/skills/melee/strike-sword-blood-red.webp";
 
-import { DEGREE, ROLL_TYPE } from "./constants.js";
+import { DEGREE, ROLL_TYPE } from "../constants.js";
 
 export async function executeCombatAssessment() {
     // Ensure a token/actor is selected, or default to the player's assigned character

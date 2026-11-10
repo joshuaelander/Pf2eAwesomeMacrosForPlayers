@@ -18,7 +18,7 @@
 export const TWIN_TAKEDOWN_MACRO_NAME = "Twin Takedown";
 export const TWIN_TAKEDOWN_MACRO_ICON = "icons/skills/melee/weapons-crossed-swords-teal.webp";
 
-import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "./constants.js";
+import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "../constants.js";
 
 /**
  * Helper to capture the next chat message of a specific type from an actor.

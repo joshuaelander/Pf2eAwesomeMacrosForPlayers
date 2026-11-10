@@ -8,120 +8,120 @@ import {
     createCharacter,
     ROLL_RANDOM_CHARACTER_MACRO_NAME,
     ROLL_RANDOM_CHARACTER_MACRO_ICON,
-} from "./roll-random-character.js";
+} from "./general/roll-random-character.js";
 
 import {
     openRecallKnowledgeDialog,
     ENHANCED_RECALL_MACRO_NAME,
     ENHANCED_RECALL_MACRO_ICON,
-} from "./enhanced-recall-knowledge.js";
+} from "./recall-knowledge/enhanced-recall-knowledge.js";
 
 import {
     addExplorationActivity,
     EXPLORATION_ACTIVITY_MACRO_NAME,
     EXPLORATION_ACTIVITY_MACRO_ICON,
-} from "./easy-exploration.js";
+} from "./general/easy-exploration.js";
 
 import {
     executeMonsterHunter,
     MONSTER_HUNTER_MACRO_NAME,
     MONSTER_HUNTER_MACRO_ICON,
-} from "./monster-hunter.js";
+} from "./recall-knowledge/monster-hunter.js";
 
 import {
     executeKnownWeaknesses,
     KNOWN_WEAKNESSES_MACRO_NAME,
     KNOWN_WEAKNESSES_MACRO_ICON,
-} from "./known-weaknesses.js";
+} from "./recall-knowledge/known-weaknesses.js";
 
 import {
     executeCombatAssessment,
     COMBAT_ASSESSMENT_MACRO_NAME,
     COMBAT_ASSESSMENT_MACRO_ICON,
-} from "./combat-assessment.js";
+} from "./recall-knowledge/combat-assessment.js";
 
 import {
     executeMagusAnalysis,
     MAGUS_ANALYSIS_MACRO_NAME,
     MAGUS_ANALYSIS_MACRO_ICON,
-} from "./magus-analysis.js";
+} from "./recall-knowledge/magus-analysis.js";
 
 import {
     mastermindRecall,
     MASTERMIND_RECALL_MACRO_NAME,
     MASTERMIND_RECALL_MACRO_ICON,
     applyMastermindOffGuardAsGM
-} from "./mastermind-rogues-recall.js";
+} from "./recall-knowledge/mastermind-rogues-recall.js";
 
 import {
     executeFlurryOfBlows,
     FLURRY_OF_BLOWS_MACRO_NAME,
     FLURRY_OF_BLOWS_MACRO_ICON
-} from "./flurry-of-blows.js";
+} from "./combat/flurry-of-blows.js";
 
 import {
     executeHuntedShot,
     HUNTED_SHOT_MACRO_NAME,
     HUNTED_SHOT_MACRO_ICON
-} from "./hunted-shot.js";
+} from "./combat/hunted-shot.js";
 
 import {
     executeTwinTakedown,
     TWIN_TAKEDOWN_MACRO_NAME,
     TWIN_TAKEDOWN_MACRO_ICON
-} from "./twin-takedown.js";
+} from "./combat/twin-takedown.js";
 
 import {
     openPartyStash,
     OPEN_PARTY_STASH_MACRO_NAME,
     OPEN_PARTY_STASH_MACRO_ICON
-} from "./open-party-stash.js";
+} from "./general/open-party-stash.js";
 
 import {
     executeInstructiveStrike,
     INSTRUCTIVE_STRIKE_MACRO_NAME,
     INSTRUCTIVE_STRIKE_MACRO_ICON
-} from "./instructive-strike.js";
+} from "./recall-knowledge/instructive-strike.js";
 
 import {
     executeDoubleSlice,
     DOUBLE_SLICE_MACRO_NAME,
     DOUBLE_SLICE_MACRO_ICON
-} from "./double-slice.js";
+} from "./combat/double-slice.js";
 
 import {
     executeTwinFeint,
     TWIN_FEINT_MACRO_NAME,
     TWIN_FEINT_MACRO_ICON
-} from "./twin-feint.js";
+} from "./combat/twin-feint.js";
 
 import {
     executeResetMovement,
     RESET_MOVEMENT_MACRO_NAME,
     RESET_MOVEMENT_MACRO_ICON,
     resetTokenMovementAsGM
-} from "./reset-movement.js";
+} from "./combat/reset-movement.js";
 
 import {
     executeLingeringComposition,
     LINGERING_COMPOSITION_MACRO_NAME,
     LINGERING_COMPOSITION_MACRO_ICON,
     applyLingeringEffectAsGM
-} from "./lingering-composition.js";
+} from "./combat/lingering-composition.js";
 
 import {
     executeMartialPerformance,
     MARTIAL_PERFORMANCE_MACRO_NAME,
     MARTIAL_PERFORMANCE_MACRO_ICON,
     extendAnthemDurationAsGM
-} from "./martial-performance.js";
+} from "./combat/martial-performance.js";
 
 import {
     executeAutoUpgradeFormulas,
     AUTO_UPGRADE_FORMULAS_MACRO_NAME,
     AUTO_UPGRADE_FORMULAS_MACRO_ICON,
     updateActorFormulasAsGM
-} from "./auto-upgrade-formulas.js";
+} from "./crafting/auto-upgrade-formulas.js";
 
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [

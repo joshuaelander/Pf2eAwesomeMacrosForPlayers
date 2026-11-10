@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/10/2026 - Version 1.8.0 - Reorganized script files into categorized subfolders (`combat/`, `recall-knowledge/`, `crafting/`, and `general/`) matching macro categories. Updated all internal module and helper imports cleanly while keeping `constants.js` and `main.js` at root. \
+\
 11/10/2026 - Version 1.7.6 - Clean up text, formatting, and code messiness for various macros.
 \
 11/9/2026 - Version 1.7.2 - Added Twin Takedown macro for dual-wielding Rangers (Player Core, pg. 157) to execute two strikes against their hunted prey (one with each wielded melee weapon), progressing MAP normally with Flurry Hunter's Edge support, dynamic setup dialog with live modifier previews, secret target preservation, and combined damage calculation on hits for resistances and weaknesses. \
