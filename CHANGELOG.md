@@ -1,7 +1,7 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
-11/9/2026 - Version 1.7.5 - Fixed hit/crit detection for Twin Feint and attack macros to properly recognize critical hits with off-guard applied (checking rendered card content, toolbelt flags, and target AC math). Fixed combined damage calculation in Double Slice, Twin Takedown, Flurry of Blows, and Hunted Shot so that persistent damage (such as persistent bleed from critical specialization) is preserved as active persistent damage (e.g., 1d6 persistent bleed) instead of evaluating to 0. \
+11/10/2026 - Version 1.7.6 - Clean up text, formatting, and code messiness for various macros.
 \
 11/9/2026 - Version 1.7.2 - Added Twin Takedown macro for dual-wielding Rangers (Player Core, pg. 157) to execute two strikes against their hunted prey (one with each wielded melee weapon), progressing MAP normally with Flurry Hunter's Edge support, dynamic setup dialog with live modifier previews, secret target preservation, and combined damage calculation on hits for resistances and weaknesses. \
 \

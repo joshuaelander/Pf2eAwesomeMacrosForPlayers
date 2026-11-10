@@ -27,22 +27,26 @@
 export const TWIN_FEINT_MACRO_NAME = "Twin Feint";
 export const TWIN_FEINT_MACRO_ICON = "icons/skills/melee/weapons-crossed-daggers-orange.webp";
 
+import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "./constants.js";
+
 /**
  * Helper to capture the next chat message of a specific type from an actor.
  */
-function captureNextRollMessage(actorId, rollType, timeoutMs = 120000) {
+function captureNextRollMessage(actorId, rollType, excludeId = null, timeoutMs = 120000) {
     return new Promise((resolve) => {
+        const findRecent = () => game.messages?.contents?.slice(-10).reverse()
+            .find(m => m.actor?.id === actorId && m.flags?.pf2e?.context?.type === rollType && (!excludeId || m.id !== excludeId)) ?? null;
+
         const hookId = Hooks.on("createChatMessage", (msg) => {
-            if (msg.actor?.id !== actorId) return;
-            const context = msg.flags?.pf2e?.context;
-            if (context?.type === rollType) {
+            if (msg.actor?.id !== actorId || (excludeId && msg.id === excludeId)) return;
+            if (msg.flags?.pf2e?.context?.type === rollType) {
                 Hooks.off("createChatMessage", hookId);
                 resolve(msg);
             }
         });
         setTimeout(() => {
             Hooks.off("createChatMessage", hookId);
-            resolve(null);
+            resolve(findRecent());
         }, timeoutMs);
     });
 }
@@ -283,12 +287,10 @@ export async function executeTwinFeint() {
         content: setupDialogContent,
         buttons: {
             cancel: {
-                icon: '<i class="fas fa-times"></i>',
                 label: "Cancel"
             },
             execute: {
-                icon: '<i class="fas fa-dagger"></i>',
-                label: "Strike!",
+                label: "Strike",
                 callback: async (html) => {
                     const idx1 = parseInt(html.find("#tf-strike-1").val(), 10);
                     const idx2 = parseInt(html.find("#tf-strike-2").val(), 10);
@@ -387,18 +389,12 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
 
     // 2. Roll Strike 1 (Feint Strike)
     reassertTarget(target);
-    const attack1Promise = captureNextRollMessage(actor.id, "attack-roll");
+    const attack1Promise = captureNextRollMessage(actor.id, ROLL_TYPE.ATTACK);
     await strike1.variants[s1MapIdx].roll({
         target: target?.object ?? target,
         extraRollOptions: ["action:twin-feint"]
     });
-    let attack1Msg = await attack1Promise;
-    if (!attack1Msg) {
-        attack1Msg = game.messages.contents
-            .slice(-10)
-            .reverse()
-            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "attack-roll") ?? null;
-    }
+    const attack1Msg = await attack1Promise;
 
     if (!target && attack1Msg?.target?.token?.object) {
         target = attack1Msg.target.token.object;
@@ -416,7 +412,7 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
     }
 
     reassertTarget(target);
-    const attack2Promise = captureNextRollMessage(actor.id, "attack-roll");
+    const attack2Promise = captureNextRollMessage(actor.id, ROLL_TYPE.ATTACK, attack1Msg?.id);
 
     const rollArgs2 = {
         target: target?.object ?? target,
@@ -446,13 +442,7 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
             await removeOffGuardEffect(actor, attackEffectId);
         }
     }
-    let attack2Msg = await attack2Promise;
-    if (!attack2Msg) {
-        attack2Msg = game.messages.contents
-            .slice(-10)
-            .reverse()
-            .find(m => m.actor?.id === actor.id && m.flags?.pf2e?.context?.type === "attack-roll" && m.id !== attack1Msg?.id) ?? null;
-    }
+    const attack2Msg = await attack2Promise;
 
     if (!target && attack2Msg?.target?.token?.object) {
         target = attack2Msg.target.token.object;
@@ -463,24 +453,19 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
 
     // 4. Parse detected outcomes
     const parseOutcome = (msg, isStrike2 = false) => {
-        if (!msg) return "hit";
+        if (!msg) return OUTCOME.HIT;
         const liveMsg = (msg.id ? game.messages.get(msg.id) : null) ?? msg;
 
-        // 1. Check live message content / HTML for rendered degree of success (Toolbelt Target Helper, PF2e card, etc.)
+        // 1. Check live message content / HTML
         const content = (liveMsg.content || "") + (liveMsg.flavor || "");
-        if (content.includes("criticalSuccess") || content.includes("Critical Hit") || content.includes("critical-hit")) {
-            return "crit";
-        }
-        if (content.includes("criticalFailure") || content.includes("Critical Miss") || content.includes("critical-miss")) {
-            return "miss";
-        }
+        if (DEGREE_STRINGS.CRIT.some(s => content.includes(s))) return OUTCOME.CRIT;
+        if (DEGREE_STRINGS.MISS.some(s => content.includes(s))) return OUTCOME.MISS;
 
         // 2. Check pf2e context outcome
         const contextOutcome = liveMsg.flags?.pf2e?.context?.outcome;
-        let baseOutcome = null;
-        if (contextOutcome === "criticalSuccess") baseOutcome = "crit";
-        else if (contextOutcome === "success") baseOutcome = "hit";
-        else if (contextOutcome === "failure" || contextOutcome === "criticalFailure") baseOutcome = "miss";
+        if (contextOutcome === DEGREE.CRITICAL_SUCCESS) return OUTCOME.CRIT;
+        if (contextOutcome === DEGREE.SUCCESS) return OUTCOME.HIT;
+        if (contextOutcome === DEGREE.FAILURE || contextOutcome === DEGREE.CRITICAL_FAILURE) return OUTCOME.MISS;
 
         // 3. Check pf2e-toolbelt targetHelper flags if present
         const toolbeltTargets = liveMsg.flags?.["pf2e-toolbelt"]?.targetHelper?.targets 
@@ -488,46 +473,26 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
         if (toolbeltTargets && typeof toolbeltTargets === "object") {
             for (const tData of Object.values(toolbeltTargets)) {
                 const deg = tData?.degree ?? tData?.result ?? tData?.outcome;
-                if (deg === "criticalSuccess" || deg === 3 || deg === "crit") return "crit";
-                if (deg === "success" || deg === 2 || deg === "hit") baseOutcome = baseOutcome ?? "hit";
-                if (deg === "failure" || deg === "criticalFailure" || deg === 1 || deg === 0) baseOutcome = baseOutcome ?? "miss";
+                if (deg === DEGREE.CRITICAL_SUCCESS || deg === 3 || deg === OUTCOME.CRIT) return OUTCOME.CRIT;
+                if (deg === DEGREE.SUCCESS || deg === 2 || deg === OUTCOME.HIT) return OUTCOME.HIT;
+                if (deg === DEGREE.FAILURE || deg === DEGREE.CRITICAL_FAILURE || deg === 1 || deg === 0) return OUTCOME.MISS;
             }
         }
 
-        // 4. Mathematical verification against target AC (crucial for Twin Feint Strike 2 off-guard)
-        const roll = liveMsg.rolls?.[0];
-        const total = roll?.total;
-        const targetActor = target?.actor;
-        const baseAc = targetActor?.attributes?.ac?.value ?? targetActor?.system?.attributes?.ac?.value;
-
+        // 4. Mathematical verification against target AC (Strike 2 applies Off-Guard)
+        const total = liveMsg.rolls?.[0]?.total;
+        const baseAc = target?.actor?.attributes?.ac?.value ?? target?.actor?.system?.attributes?.ac?.value;
         if (typeof total === "number" && typeof baseAc === "number") {
-            let effectiveAc = baseAc;
-            if (isStrike2) {
-                const alreadyOffGuard = isTargetOffGuard(targetActor);
-                if (!alreadyOffGuard) {
-                    effectiveAc = Math.max(0, baseAc - 2);
-                }
-            }
+            const effectiveAc = (isStrike2 && !isTargetOffGuard(target?.actor)) ? Math.max(0, baseAc - 2) : baseAc;
+            let degree = total >= effectiveAc + 10 ? 3 : (total >= effectiveAc ? 2 : (total <= effectiveAc - 10 ? 0 : 1));
+            const d20 = liveMsg.rolls[0].dice?.find(d => d.faces === 20)?.results?.find(r => r.active)?.result;
+            if (d20 === 20) degree = Math.min(3, degree + 1);
+            else if (d20 === 1) degree = Math.max(0, degree - 1);
 
-            const diff = total - effectiveAc;
-            let mathDegree = 1; // 0: crit fail, 1: fail, 2: success, 3: crit success
-            if (diff >= 10) mathDegree = 3;
-            else if (diff >= 0) mathDegree = 2;
-            else if (diff <= -10) mathDegree = 0;
-            else mathDegree = 1;
-
-            // Apply natural 20 / natural 1 step adjustments
-            const d20Die = roll.dice?.find(d => d.faces === 20);
-            const d20Result = d20Die?.results?.find(r => r.active)?.result;
-            if (d20Result === 20) mathDegree = Math.min(3, mathDegree + 1);
-            else if (d20Result === 1) mathDegree = Math.max(0, mathDegree - 1);
-
-            if (mathDegree === 3) return "crit";
-            if (mathDegree === 2) return "hit";
-            if (mathDegree <= 1) return "miss";
+            return degree === 3 ? OUTCOME.CRIT : (degree === 2 ? OUTCOME.HIT : OUTCOME.MISS);
         }
 
-        return baseOutcome ?? "hit";
+        return OUTCOME.HIT;
     };
 
     const detected1 = parseOutcome(attack1Msg, false);
@@ -543,17 +508,17 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
             <div style="margin-bottom: 10px; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 4px;">
                 <label style="font-weight: bold; display: block; margin-bottom: 4px;">Strike 1: ${strike1.label} [${s1Tag}]${strike1Summary}</label>
                 <select id="tf-outcome-1" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #aaa;">
-                    <option value="miss" ${detected1 === "miss" ? "selected" : ""}>Miss</option>
-                    <option value="hit" ${detected1 === "hit" ? "selected" : ""}>Hit</option>
-                    <option value="crit" ${detected1 === "crit" ? "selected" : ""}>Critical Hit</option>
+                    <option value="${OUTCOME.MISS}" ${detected1 === OUTCOME.MISS ? "selected" : ""}>Miss</option>
+                    <option value="${OUTCOME.HIT}" ${detected1 === OUTCOME.HIT ? "selected" : ""}>Hit</option>
+                    <option value="${OUTCOME.CRIT}" ${detected1 === OUTCOME.CRIT ? "selected" : ""}>Critical Hit</option>
                 </select>
             </div>
             <div style="margin-bottom: 12px; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 4px;">
                 <label style="font-weight: bold; display: block; margin-bottom: 4px;">Strike 2: ${strike2.label} [${s2Tag}] [Off-Guard]${strike2Summary}</label>
                 <select id="tf-outcome-2" style="width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #aaa;">
-                    <option value="miss" ${detected2 === "miss" ? "selected" : ""}>Miss</option>
-                    <option value="hit" ${detected2 === "hit" ? "selected" : ""}>Hit</option>
-                    <option value="crit" ${detected2 === "crit" ? "selected" : ""}>Critical Hit</option>
+                    <option value="${OUTCOME.MISS}" ${detected2 === OUTCOME.MISS ? "selected" : ""}>Miss</option>
+                    <option value="${OUTCOME.HIT}" ${detected2 === OUTCOME.HIT ? "selected" : ""}>Hit</option>
+                    <option value="${OUTCOME.CRIT}" ${detected2 === OUTCOME.CRIT ? "selected" : ""}>Critical Hit</option>
                 </select>
                 <p style="margin: 4px 0 0 0; font-size: 0.85em; color: #555;">
                     <em>Note: Sneak Attack precision damage is automatically included on Strike 2 on a hit.</em>
@@ -567,11 +532,9 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
         content: confirmContent,
         buttons: {
             cancel: {
-                icon: '<i class="fas fa-times"></i>',
                 label: "Cancel"
             },
             rollDamage: {
-                icon: '<i class="fas fa-dice-d20"></i>',
                 label: "Roll Damage",
                 callback: async (html) => {
                     const outcome1 = html.find("#tf-outcome-1").val();
@@ -589,8 +552,8 @@ async function rollTwinFeint(actor, token, target, strike1, strike2, startingMap
  * Rolls damage for each successful strike.
  */
 async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, outcome1, outcome2, attack1Msg, attack2Msg, targetAlreadyOffGuard = false) {
-    const hit1 = outcome1 !== "miss";
-    const hit2 = outcome2 !== "miss";
+    const hit1 = outcome1 !== OUTCOME.MISS;
+    const hit2 = outcome2 !== OUTCOME.MISS;
 
     if (!target) {
         target = attack1Msg?.target?.token?.object ?? attack2Msg?.target?.token?.object ?? null;
@@ -624,62 +587,42 @@ async function resolveTwinFeintDamage(actor, token, target, strike1, strike2, ou
     // Helper to roll damage with attached context
     const rollStrikeDamage = async (strike, outcome, attackMsg, isStrike2 = false) => {
         reassertTarget(target);
-        const isCrit = outcome === "crit";
-        const attackContext = attackMsg?.flags?.pf2e?.context ? deepClone(attackMsg.flags.pf2e.context) : null;
+        const isCrit = outcome === OUTCOME.CRIT;
         const targetObj = target?.object ?? target ?? null;
 
         const extraOptions = ["action:twin-feint"];
-        if (isStrike2) {
-            extraOptions.push("target:condition:off-guard", "target:condition:flat-footed");
-            if (attackContext) {
-                attackContext.options = Array.isArray(attackContext.options) ? [...attackContext.options] : [];
-                if (!attackContext.options.includes("target:condition:off-guard")) {
-                    attackContext.options.push("target:condition:off-guard");
-                }
-                if (!attackContext.options.includes("target:condition:flat-footed")) {
-                    attackContext.options.push("target:condition:flat-footed");
-                }
-            }
-        } else if (!targetAlreadyOffGuard && attackContext) {
-            if (Array.isArray(attackContext.options)) {
-                attackContext.options = attackContext.options.filter(
-                    o => o !== "target:condition:off-guard" && o !== "target:condition:flat-footed"
-                );
-            }
-        }
+        if (isStrike2) extraOptions.push("target:condition:off-guard", "target:condition:flat-footed");
 
+        let attackContext = attackMsg?.flags?.pf2e?.context ? deepClone(attackMsg.flags.pf2e.context) : null;
         if (attackContext) {
             attackContext.skipDialog = true;
+            const options = new Set(attackContext.options ?? []);
+            if (isStrike2) {
+                options.add("target:condition:off-guard");
+                options.add("target:condition:flat-footed");
+            } else if (!targetAlreadyOffGuard) {
+                options.delete("target:condition:off-guard");
+                options.delete("target:condition:flat-footed");
+            }
+            attackContext.options = Array.from(options);
         }
-
-        const skipDialogEvent = {
-            shiftKey: !!globalThis.game?.user?.settings?.showDamageDialogs,
-            ctrlKey: false,
-            metaKey: false,
-            preventDefault: () => {},
-            stopPropagation: () => {}
-        };
 
         const rollArgs = {
             checkContext: attackContext,
             target: targetObj,
-            outcome: isCrit ? "criticalSuccess" : "success",
+            outcome: isCrit ? DEGREE.CRITICAL_SUCCESS : DEGREE.SUCCESS,
             extraRollOptions: extraOptions,
             options: extraOptions,
             skipDialog: true,
-            event: skipDialogEvent
+            event: { shiftKey: !!globalThis.game?.user?.settings?.showDamageDialogs, ctrlKey: false, metaKey: false }
         };
 
+        const method = isCrit ? strike.critical : strike.damage;
         try {
-            if (isCrit) {
-                return await strike.critical(rollArgs);
-            } else {
-                return await strike.damage(rollArgs);
-            }
+            return await method.call(strike, rollArgs);
         } catch (err) {
-            console.warn(`PF2e Twin Feint | Error rolling damage for ${strike.label}, falling back`, err);
-            const fallbackArgs = { skipDialog: true, event: skipDialogEvent };
-            return isCrit ? await strike.critical(fallbackArgs) : await strike.damage(fallbackArgs);
+            console.warn(`PF2e Twin Feint | Error rolling damage for ${strike.label}`, err);
+            return await method.call(strike, { skipDialog: true, event: rollArgs.event });
         }
     };
 

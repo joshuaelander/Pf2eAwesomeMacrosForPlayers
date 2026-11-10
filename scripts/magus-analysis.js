@@ -73,14 +73,12 @@ export async function executeMagusAnalysis() {
         `,
         buttons: {
             yes: {
-                icon: '<i class="fas fa-check"></i>',
                 label: "Yes (+1)",
                 callback: async () => {
                     await finishMagusAnalysis(actor, targetActor, targetToken, token, 1);
                 }
             },
             no: {
-                icon: '<i class="fas fa-times"></i>',
                 label: "No (+0)",
                 callback: async () => {
                     await finishMagusAnalysis(actor, targetActor, targetToken, token, 0);

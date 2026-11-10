@@ -11,6 +11,8 @@
 export const COMBAT_ASSESSMENT_MACRO_NAME = "Combat Assessment";
 export const COMBAT_ASSESSMENT_MACRO_ICON = "icons/skills/melee/strike-sword-blood-red.webp";
 
+import { DEGREE, ROLL_TYPE } from "./constants.js";
+
 export async function executeCombatAssessment() {
     // Ensure a token/actor is selected, or default to the player's assigned character
     let actor = null;
@@ -101,7 +103,7 @@ export async function executeCombatAssessment() {
                     // Ensure it's the attack roll from our actor
                     if (msg.actor?.id !== actor.id) return;
                     const context = msg.flags?.pf2e?.context;
-                    if (context?.type !== "attack-roll") return;
+                    if (context?.type !== ROLL_TYPE.ATTACK) return;
 
                     // Clean up the hook immediately so it doesn't fire on future attacks
                     Hooks.off("createChatMessage", hookId);
@@ -110,12 +112,12 @@ export async function executeCombatAssessment() {
                     await new Promise(resolve => setTimeout(resolve, 3000));
 
                     const outcome = context.outcome;
-                    if (outcome === "success" || outcome === "criticalSuccess") {
+                    if (outcome === DEGREE.SUCCESS || outcome === DEGREE.CRITICAL_SUCCESS) {
                         let bonus = 0;
                         let bonusText = "";
 
                         if (hasOA) {
-                            bonus = outcome === "criticalSuccess" ? 4 : 2;
+                            bonus = outcome === DEGREE.CRITICAL_SUCCESS ? 4 : 2;
                             bonusText = `<br><span style="color:green; font-size:0.9em;"><strong>Observational Analysis:</strong> +${bonus} circumstance bonus applied to recall knowledge!</span>`;
                         }
 

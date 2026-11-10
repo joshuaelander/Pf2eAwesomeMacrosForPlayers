@@ -19,6 +19,8 @@
 export const INSTRUCTIVE_STRIKE_MACRO_NAME = "Instructive Strike";
 export const INSTRUCTIVE_STRIKE_MACRO_ICON = "icons/skills/melee/strike-dagger-arcane-pink.webp";
 
+import { DEGREE, ROLL_TYPE } from "./constants.js";
+
 export async function executeInstructiveStrike() {
     // Ensure a token/actor is selected, or default to the player's assigned character
     let actor = null;
@@ -120,7 +122,7 @@ export async function executeInstructiveStrike() {
                     // Ensure it's the attack roll from our actor
                     if (msg.actor?.id !== actor.id) return;
                     const context = msg.flags?.pf2e?.context;
-                    if (context?.type !== "attack-roll") return;
+                    if (context?.type !== ROLL_TYPE.ATTACK) return;
 
                     // Clean up the hook immediately
                     Hooks.off("createChatMessage", hookId);
@@ -129,11 +131,11 @@ export async function executeInstructiveStrike() {
                     await new Promise(resolve => setTimeout(resolve, 3000));
 
                     const outcome = context.outcome;
-                    if (outcome === "success" || outcome === "criticalSuccess") {
+                    if (outcome === DEGREE.SUCCESS || outcome === DEGREE.CRITICAL_SUCCESS) {
                         let bonus = 0;
                         let bonusText = "";
 
-                        if (outcome === "criticalSuccess") {
+                        if (outcome === DEGREE.CRITICAL_SUCCESS) {
                             bonus = 2;
                             bonusText = `<br><span style="color:green; font-size:0.9em;"><strong>Instructive Strike:</strong> +2 circumstance bonus applied to Recall Knowledge on a Critical Hit!</span>`;
                         }

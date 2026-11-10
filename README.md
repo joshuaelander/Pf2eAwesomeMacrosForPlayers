@@ -39,6 +39,8 @@ Also , if you have any special lores, it will suggest the best one to use based 
  
 17.) Martial Performance for warrior muse bards to extend the remaining duration of active composition cantrip / anthem effects by +1 round across all selected tokens and nearby allies.
 
+18.) Twin Takedown for dual-wielding Rangers to execute two melee strikes against their hunted prey.
+
 Macros are automatically organized in Foundry into dedicated subfolders under **PF2e Awesome Macros For Players**:
 - **Recall Knowledge**: Enhanced Recall Knowledge, Monster Hunter, Known Weaknesses, Combat Assessment, Magus's Analysis, Mastermind Rogue's Recall, Instructive Strike.
 - **Combat**: Flurry of Blows, Hunted Shot, Double Slice, Twin Feint, Reset Movement, Lingering Composition, Martial Performance.
