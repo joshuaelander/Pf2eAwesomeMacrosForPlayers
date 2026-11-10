@@ -74,6 +74,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: "Compendium.pf2e.spell-effects.Item.bePfGQgZa4TblpUp",
         icon: "icons/skills/trades/music-notes-sound-blue.webp",
         radius: 60,
+        isEmanation: true,
+        singleTarget: false,
+        rangeLabel: "60 ft. emanation",
         targetType: "ally",
         description: "+1 status bonus to attack rolls, damage rolls, and saves vs fear.",
         rules: [
@@ -91,6 +94,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: "Compendium.pf2e.spell-effects.Item.FjROWf8Aji7TaTsA",
         icon: "icons/skills/trades/music-singing-voice-blue.webp",
         radius: 60,
+        isEmanation: true,
+        singleTarget: false,
+        rangeLabel: "60 ft. emanation",
         targetType: "ally",
         description: "+1 status bonus to AC and saves; physical resistance equal to 1.",
         rules: [
@@ -108,6 +114,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: "Compendium.pf2e.spell-effects.Item.Fv7D906k7kGg6u9k",
         icon: "icons/skills/melee/unarmed-punch-fist.webp",
         radius: 60,
+        isEmanation: true,
+        singleTarget: false,
+        rangeLabel: "60 ft. emanation",
         targetType: "ally",
         description: "+1 status bonus to Athletics checks and Athletics DCs.",
         rules: [
@@ -124,6 +133,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: null,
         icon: "icons/skills/movement/feet-winged-boots-glowing-yellow.webp",
         radius: 60,
+        isEmanation: true,
+        singleTarget: false,
+        rangeLabel: "60 ft. emanation",
         targetType: "ally",
         description: "+10-foot status bonus to all Speeds.",
         rules: [
@@ -136,15 +148,15 @@ export const COMPOSITION_CANTRIPS = [
         legacyName: "Uplifting Overture",
         effectSlug: "spell-effect-uplifting-overture",
         legacyEffectSlug: "spell-effect-uplifting-overture",
-        compendiumUuid: null,
+        compendiumUuid: "Compendium.pf2e.spell-effects.Item.TErgFRfydm1xmnW",
         icon: "icons/tools/instruments/harp-lap-gold.webp",
         radius: 60,
+        isEmanation: false,
+        singleTarget: true,
+        rangeLabel: "60 ft. range (1 ally)",
         targetType: "ally",
-        description: "+1 status bonus to skill checks and Will saving throws.",
-        rules: [
-            { key: "FlatModifier", selector: "skill-check", value: 1, type: "status", label: "Uplifting Overture" },
-            { key: "FlatModifier", selector: "will", value: 1, type: "status", label: "Uplifting Overture" }
-        ]
+        description: "Counts as having prepared to Aid target ally on a skill check. When using Aid, roll Performance instead of the normal skill check; a failure becomes a success, and automatically critically succeed if legendary in Performance.",
+        rules: []
     },
     {
         id: "allegro",
@@ -155,6 +167,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: null,
         icon: "icons/magic/time/hourglass-yellow-green.webp",
         radius: 30,
+        isEmanation: false,
+        singleTarget: true,
+        rangeLabel: "30 ft. range (1 ally)",
         targetType: "ally",
         description: "Target ally is Quickened 1 (can use the extra action to Stride, Strike, or Step).",
         rules: [
@@ -170,6 +185,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: "Compendium.pf2e.spell-effects.Item.B6jQdD8z9T4P7X5G",
         icon: "icons/magic/death/skull-horned-goat-pentagram-red.webp",
         radius: 30,
+        isEmanation: true,
+        singleTarget: false,
+        rangeLabel: "30 ft. emanation",
         targetType: "enemy",
         description: "Enemies in 30 ft emanation become Frightened 1 (cannot reduce below 1 while in range).",
         rules: [
@@ -185,6 +203,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: null,
         icon: "icons/tools/navigation/map-marked-blue.webp",
         radius: 60,
+        isEmanation: true,
+        singleTarget: false,
+        rangeLabel: "60 ft. emanation",
         targetType: "ally",
         description: "Hustle for up to 1 hour without fatigue.",
         rules: []
@@ -198,6 +219,9 @@ export const COMPOSITION_CANTRIPS = [
         compendiumUuid: null,
         icon: "icons/magic/defensive/barrier-shield-dome-blue-purple.webp",
         radius: 60,
+        isEmanation: false,
+        singleTarget: false,
+        rangeLabel: "60 ft. range",
         targetType: "ally",
         description: "Create an invisible 10-foot-by-10-foot wall.",
         rules: []
@@ -249,6 +273,11 @@ export function getAvailableCompositionCantrips(actor) {
                 if (!isNaN(parsed) && parsed > 0) radius = parsed;
             }
 
+            const targetVal = spell.system?.target?.value?.toLowerCase() || "";
+            const isSingle = targetVal.includes("1 ally") || targetVal.includes("one ally") || targetVal.includes("1 target");
+            const isEmanation = !isSingle && (spell.system?.area?.type === "emanation" || !spell.system?.range?.value);
+            const rangeLabel = isEmanation ? `${radius} ft. emanation` : (isSingle ? `${radius} ft. range (1 ally)` : `${radius} ft. range`);
+
             list.push({
                 id: slug,
                 name: spell.name,
@@ -258,6 +287,9 @@ export function getAvailableCompositionCantrips(actor) {
                 compendiumUuid: spell.uuid || null,
                 icon: spell.img || LINGERING_COMPOSITION_MACRO_ICON,
                 radius: radius,
+                isEmanation: isEmanation,
+                singleTarget: isSingle,
+                rangeLabel: rangeLabel,
                 targetType: isEnemy ? "enemy" : "ally",
                 description: rawDesc ? rawDesc.slice(0, 110) + "..." : "Composition cantrip.",
                 isKnown: true,
@@ -317,13 +349,14 @@ function getDistanceBetweenTokens(token1, token2) {
 /**
  * Finds all tokens on the scene matching the target type (ally or enemy) within range.
  */
-function getTokensInRange(sourceToken, radiusFeet, targetType = "ally") {
+function getTokensInRange(sourceToken, radiusFeet, targetType = "ally", excludeSelf = false) {
     if (!sourceToken || !canvas?.scene) return [];
     const results = [];
 
     for (const token of canvas.tokens.placeables) {
         if (!token?.actor) continue;
         const isSelf = token.id === sourceToken.id;
+        if (excludeSelf && isSelf) continue;
         
         if (targetType === "ally") {
             const isAlly = isSelf || token.actor.hasPlayerOwner || token.document.disposition >= 1 || token.actor.type === "character";
@@ -593,7 +626,8 @@ export async function executeLingeringComposition() {
 
     const cantripOptionsHtml = availableCantrips.map((c, idx) => {
         const knownMark = c.isKnown ? " ★ (Known)" : "";
-        return `<option value="${idx}">${c.name}${knownMark} [${c.radius} ft. emanation]</option>`;
+        const label = c.rangeLabel || (c.isEmanation !== false ? `${c.radius} ft. emanation` : `${c.radius} ft. range`);
+        return `<option value="${idx}">${c.name}${knownMark} [${label}]</option>`;
     }).join("");
 
     const levelOptionsHtml = Array.from({ length: 26 }, (_, i) => i).map(lvl => {
@@ -645,7 +679,7 @@ export async function executeLingeringComposition() {
 
             <div style="margin-bottom: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <label style="font-weight: bold;">Targets in Emanation Range:</label>
+                    <label id="lc-targets-header" style="font-weight: bold;">Targets in Range:</label>
                     <button type="button" id="lc-toggle-all" style="font-size: 0.75em; padding: 2px 6px; cursor: pointer;">Toggle All</button>
                 </div>
                 <div id="lc-targets-list" style="max-height: 140px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 6px; background: #fff;">
@@ -667,11 +701,9 @@ export async function executeLingeringComposition() {
         content: dialogContent,
         buttons: {
             cancel: {
-                icon: '<i class="fas fa-times"></i>',
                 label: "Cancel"
             },
             roll: {
-                icon: '<i class="fas fa-music"></i>',
                 label: "Perform & Cast",
                 callback: async (html) => {
                     const cantripIdx = parseInt(html.find("#lc-cantrip").val(), 10) || 0;
@@ -696,19 +728,42 @@ export async function executeLingeringComposition() {
                 const c = availableCantrips[cIdx] || defaultCantrip;
                 html.find("#lc-cantrip-desc").text(c.description);
 
-                const targets = getTokensInRange(token, c.radius, c.targetType);
+                const isSingle = !!c.singleTarget;
+                const headerText = isSingle
+                    ? `Select 1 Ally in Range (${c.radius} ft):`
+                    : (c.targetType === "enemy" ? `Foes in ${c.radius} ft. Emanation:` : `Targets in ${c.radius} ft. Emanation:`);
+                html.find("#lc-targets-header").text(headerText);
+                html.find("#lc-toggle-all").toggle(!isSingle);
+
+                const targets = getTokensInRange(token, c.radius, c.targetType, isSingle);
                 if (targets.length === 0) {
-                    html.find("#lc-targets-list").html(`<div style="color: #777; font-size: 0.85em; font-style: italic;">No matching tokens found in ${c.radius} ft. emanation.</div>`);
+                    const emptyMsg = isSingle
+                        ? `No allies found within ${c.radius} ft.`
+                        : `No matching tokens found in ${c.radius} ft. emanation.`;
+                    html.find("#lc-targets-list").html(`<div style="color: #777; font-size: 0.85em; font-style: italic;">${emptyMsg}</div>`);
                     return;
                 }
+
+                const canvasTargetIds = Array.from(game.user.targets ?? []).map(t => t.id);
+                const inputType = isSingle ? "radio" : "checkbox";
+                const inputName = isSingle ? "name=\"lc-target-single\"" : "";
 
                 const listHtml = targets.map((t, idx) => {
                     const distTag = t.isSelf ? "(Self)" : `(${t.distance} ft)`;
                     const actorUuid = t.actor.uuid;
+                    let isChecked = false;
+                    if (isSingle) {
+                        const wasCanvasTargeted = canvasTargetIds.includes(t.token.id);
+                        if (wasCanvasTargeted) isChecked = true;
+                        else if (idx === 0 && !targets.some(x => canvasTargetIds.includes(x.token.id))) isChecked = true;
+                    } else {
+                        isChecked = true;
+                    }
+
                     return `
                         <div style="display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; font-size: 0.9em; border-bottom: 1px solid #f0f0f0;">
                             <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; flex: 1;">
-                                <input type="checkbox" class="lc-target-checkbox" value="${actorUuid}" checked />
+                                <input type="${inputType}" ${inputName} class="lc-target-checkbox" value="${actorUuid}" ${isChecked ? "checked" : ""} />
                                 <span>${t.token.name} <small style="color: #666;">${distTag}</small></span>
                             </label>
                         </div>
@@ -821,29 +876,31 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
     // 4. Build Effect Data from Official Compendium
     const effectData = await buildCompositionEffectData(cantrip, durationRounds, token, actor);
 
-    // 5. Apply Effect to Caster
+    // 5. Apply Effect to Caster (only for emanation cantrips)
     const casterSlug = effectData.system?.slug;
-    const existingCasterEffects = actor.itemTypes.effect.filter(e => 
-        e.slug === casterSlug || 
-        e.name === effectData.name ||
-        (cantrip.id === "dirge-of-doom" && (e.slug?.includes("dirge-of-doom") || e.name?.toLowerCase().includes("dirge of doom")))
-    );
-    if (existingCasterEffects.length > 0) {
-        await actor.deleteEmbeddedDocuments("Item", existingCasterEffects.map(e => e.id));
-    }
+    if (cantrip.isEmanation !== false) {
+        const existingCasterEffects = actor.itemTypes.effect.filter(e => 
+            e.slug === casterSlug || 
+            e.name === effectData.name ||
+            (cantrip.id === "dirge-of-doom" && (e.slug?.includes("dirge-of-doom") || e.name?.toLowerCase().includes("dirge of doom")))
+        );
+        if (existingCasterEffects.length > 0) {
+            await actor.deleteEmbeddedDocuments("Item", existingCasterEffects.map(e => e.id));
+        }
 
-    // Apply the official aura effect to the caster (includesSelf: false for Dirge of Doom ensures no debuff to caster)
-    await actor.createEmbeddedDocuments("Item", [effectData]);
+        // Apply the official aura effect to the caster (includesSelf: false for Dirge of Doom ensures no debuff to caster)
+        await actor.createEmbeddedDocuments("Item", [effectData]);
+    }
 
     // 6. Apply to Checked Targets (via GM Socket if other actors)
     const appliedNames = [];
-    if (cantrip.targetType === "ally") {
+    if (cantrip.isEmanation !== false && cantrip.targetType === "ally") {
         appliedNames.push(actor.name);
     }
 
     if (applyDirect && targetActorUuids?.length > 0) {
         for (const targetUuid of targetActorUuids) {
-            if (targetUuid === actor.uuid) continue;
+            if (targetUuid === actor.uuid && cantrip.isEmanation !== false) continue;
             
             let success = false;
             if (cantrip.id === "dirge-of-doom") {
@@ -860,7 +917,7 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
                     }
                 }
             } else {
-                // For beneficial anthems: apply official spell effect document
+                // For beneficial anthems & targeted cantrips: apply official spell effect document
                 if (game.pf2eAwesomePlayerMacros?.applyLingeringEffect) {
                     success = await game.pf2eAwesomePlayerMacros.applyLingeringEffect(targetUuid, effectData, durationRounds, actor.uuid, false, null);
                 } else {
@@ -889,15 +946,21 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
 
     const targetSectionTitle = cantrip.targetType === "enemy" 
         ? `Foes Affected (Frightened 1):` 
-        : `Affected Recipients (${durationRounds} ${roundPlural}):`;
+        : (cantrip.singleTarget 
+            ? `Target Ally (${durationRounds} ${roundPlural}):`
+            : `Affected Recipients (${durationRounds} ${roundPlural}):`);
 
     const targetBadgesHtml = appliedNames.length > 0
         ? appliedNames.map(n => `<span style="display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; background: rgba(0,0,0,0.06); border-radius: 3px; font-size: 0.85em;">✓ ${n}</span>`).join("")
-        : `<em style="color: #666; font-size: 0.85em;">No external targets affected. (${cantrip.radius} ft. Aura active on ${actor.name})</em>`;
+        : (cantrip.isEmanation !== false
+            ? `<em style="color: #666; font-size: 0.85em;">No external targets affected. (${cantrip.rangeLabel || `${cantrip.radius} ft.`} Aura active on ${actor.name})</em>`
+            : `<em style="color: #666; font-size: 0.85em;">No target selected.</em>`);
 
-    const auraDescription = cantrip.targetType === "enemy"
-        ? `<strong>Active Aura:</strong> ${cantrip.name} (${cantrip.radius} ft. emanation, lasts ${durationRounds} ${roundPlural})`
-        : `<strong>Active Effect (${cantrip.name}):</strong> ${cantrip.description}`;
+    const auraDescription = cantrip.isEmanation !== false
+        ? (cantrip.targetType === "enemy"
+            ? `<strong>Active Aura:</strong> ${cantrip.name} (${cantrip.radius} ft. emanation, lasts ${durationRounds} ${roundPlural})`
+            : `<strong>Active Aura (${cantrip.name}):</strong> ${cantrip.description}`)
+        : `<strong>Targeted Effect (${cantrip.name}):</strong> ${cantrip.description}`;
 
     await ChatMessage.create({
         user: game.user.id,
