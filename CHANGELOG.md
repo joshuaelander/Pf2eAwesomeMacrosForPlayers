@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/13/2026 - Version 1.8.2 - Added Buy Crafting Formulas macro under the Crafting subfolder. Implements official Pathfinder 2e Formula Pricing. \
+\
 11/10/2026 - Version 1.8.1 - Updated Uplifting Overture in Lingering Composition per Remaster rules: corrected targeting from a 60-foot emanation aura to 60-foot range targeting 1 ally, removed inaccurate flat status modifiers, updated the spell description to reference Aid and Performance checks, and refined macro targeting UI and execution to support single-target composition cantrips. \
 \
 11/10/2026 - Version 1.8.0 - Reorganized script files into categorized subfolders (`combat/`, `recall-knowledge/`, `crafting/`, and `general/`) matching macro categories. Updated all internal module and helper imports cleanly while keeping `constants.js` and `main.js` at root. \

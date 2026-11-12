@@ -123,6 +123,13 @@ import {
     updateActorFormulasAsGM
 } from "./crafting/auto-upgrade-formulas.js";
 
+import {
+    executeBuyFormulas,
+    BUY_FORMULAS_MACRO_NAME,
+    BUY_FORMULAS_MACRO_ICON,
+    buyActorFormulasAsGM
+} from "./crafting/buy-formulas.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -150,7 +157,8 @@ const DESIRED_MACROS = [
     { name: MARTIAL_PERFORMANCE_MACRO_NAME, icon: MARTIAL_PERFORMANCE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeMartialPerformance();`, category: "Combat" },
 
     // Crafting Subfolder
-    { name: AUTO_UPGRADE_FORMULAS_MACRO_NAME, icon: AUTO_UPGRADE_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas();`, category: "Crafting" }
+    { name: AUTO_UPGRADE_FORMULAS_MACRO_NAME, icon: AUTO_UPGRADE_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas();`, category: "Crafting" },
+    { name: BUY_FORMULAS_MACRO_NAME, icon: BUY_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeBuyFormulas();`, category: "Crafting" }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -389,6 +397,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeLingeringComposition = executeLingeringComposition;
     game.pf2eAwesomePlayerMacros.executeMartialPerformance = executeMartialPerformance;
     game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas = executeAutoUpgradeFormulas;
+    game.pf2eAwesomePlayerMacros.executeBuyFormulas = executeBuyFormulas;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
@@ -482,6 +491,9 @@ Hooks.once('ready', async () => {
         // 7. Auto-Upgrade Formulas Socket
         playerModuleSocket.register("updateActorFormulas", updateActorFormulasAsGM);
 
+        // 8. Buy Formulas Socket
+        playerModuleSocket.register("buyActorFormulas", buyActorFormulasAsGM);
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
@@ -562,6 +574,16 @@ Hooks.once('ready', async () => {
             return await playerModuleSocket.executeAsGM("updateActorFormulas", actorUuid, formulas);
         } catch (error) {
             console.error("PF2e Awesome Macros For Players | Error updating formulas as GM:", error);
+            return false;
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.buyActorFormulas = async (actorUuid, formulaUuids, totalCopper) => {
+        if (!playerModuleSocket) return false;
+        try {
+            return await playerModuleSocket.executeAsGM("buyActorFormulas", actorUuid, formulaUuids, totalCopper);
+        } catch (error) {
+            console.error("PF2e Awesome Macros For Players | Error buying formulas as GM:", error);
             return false;
         }
     };
