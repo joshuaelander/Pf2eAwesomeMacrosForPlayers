@@ -336,6 +336,18 @@ export function registerSettings() {
         hint: 'If enabled, removes the success/failure color coding from the GM chat card to prevent accidental screen-peek metagaming.',
         scope: 'world', config: true, type: Boolean, default: false
     });
+
+    game.settings.register(MODULE_ID, 'quickAlchemySortOrder', {
+        name: 'Easy Quick Alchemy Default Sort',
+        hint: 'Preferred sort order for formulas in Easy Quick Alchemy (also saved automatically when changed in the dialog).',
+        scope: 'client', config: true, type: String,
+        choices: {
+            'name': 'Name (A-Z)',
+            'level-desc': 'Level (High - Low)',
+            'level-asc': 'Level (Low - High)'
+        },
+        default: 'name'
+    });
 }
 
 // --- HOOKS --- //

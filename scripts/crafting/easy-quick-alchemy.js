@@ -24,7 +24,7 @@
  */
 
 export const EASY_QUICK_ALCHEMY_MACRO_NAME = "Easy Quick Alchemy";
-export const EASY_QUICK_ALCHEMY_MACRO_ICON = "icons/consumables/potions/potion-flask-glowing-red.webp";
+export const EASY_QUICK_ALCHEMY_MACRO_ICON = "systems/pf2e/icons/features/classes/alchemical-mastery.webp";
 
 const MODULE_ID = "pf2e-awesome-macros-for-players";
 const VERSATILE_VIAL_COMPENDIUM_UUID = "Compendium.pf2e.equipment-srd.Item.ljT5pe8D7rudJqus";
@@ -133,15 +133,17 @@ async function consumeOneVersatileVial(actor) {
 }
 
 /**
- * Removes stale temporary Quick Alchemy items from an actor.
+ * Removes stale or already-depleted (quantity <= 0) temporary Quick Alchemy items from an actor.
  */
-async function cleanupTempQuickAlchemyItems(actor, maxAgeMs = 60000) {
+async function cleanupTempQuickAlchemyItems(actor, maxAgeMs = 15000) {
     if (!actor?.isOwner) return;
     const now = Date.now();
     const staleIds = actor.items
         .filter(i => {
             const flag = i.flags?.[MODULE_ID];
             if (!flag?.quickAlchemyTemp) return false;
+            const qty = Number(i.system?.quantity ?? 1);
+            if (qty <= 0) return true;
             return !maxAgeMs || (now - (flag.createdAt || 0) >= maxAgeMs);
         })
         .map(i => i.id);
@@ -157,11 +159,40 @@ async function cleanupTempQuickAlchemyItems(actor, maxAgeMs = 60000) {
 
 /**
  * Registers global hooks once per session to clean up temporary infused bomb items
- * when combat turns advance past their expiration or when combat ends.
+ * when damage is rolled, when turns advance past their expiration, or when combat ends.
  */
 function ensureTempItemCleanupHooks() {
     if (globalThis.__pf2eAwesomeQuickAlchemyCleanupHook) return;
     globalThis.__pf2eAwesomeQuickAlchemyCleanupHook = true;
+
+    Hooks.on("createChatMessage", async (msg) => {
+        if (msg?.flags?.pf2e?.context?.type !== "damage-roll") return;
+        const actor = msg.actor;
+        if (!actor?.isOwner) return;
+
+        const originUuid = msg.flags?.pf2e?.origin?.uuid || "";
+        const itemId = msg.item?.id || originUuid.split(".Item.")[1];
+        const deleteIds = actor.items
+            .filter(i => {
+                if (!i.flags?.[MODULE_ID]?.quickAlchemyTemp) return false;
+                if (itemId && i.id === itemId) return true;
+                return Number(i.system?.quantity ?? 1) <= 0;
+            })
+            .map(i => i.id);
+
+        if (deleteIds.length > 0) {
+            setTimeout(async () => {
+                try {
+                    const remainingIds = deleteIds.filter(id => actor.items.get(id));
+                    if (remainingIds.length > 0) {
+                        await actor.deleteEmbeddedDocuments("Item", remainingIds);
+                    }
+                } catch (err) {
+                    console.warn("PF2e Easy Quick Alchemy | Post-damage cleanup warning:", err);
+                }
+            }, 300);
+        }
+    });
 
     Hooks.on("combatTurnChange", async (combat) => {
         if (!combat?.combatants) return;
@@ -178,12 +209,19 @@ function ensureTempItemCleanupHooks() {
                 const flag = item.flags?.[MODULE_ID];
                 if (!flag?.quickAlchemyTemp) continue;
 
-                // Only clean up items tied to this combat when it is safe (start of actor's next turn or later rounds)
+                // Clean up depleted (0 quantity) temporary items immediately on turn change
+                if (Number(item.system?.quantity ?? 1) <= 0) {
+                    expiredIds.push(item.id);
+                    continue;
+                }
+
+                // Quick Vials expire as soon as the actor's turn ends; other temp items expire on next turn / later rounds
                 if (flag.combatId === combat.id) {
+                    const turnLeftActor = Boolean(flag.quickVial) && activeCombatant?.actorId !== actor.id;
                     const isActorsNewTurn = activeCombatant?.actorId === actor.id &&
                         (currentRound > (flag.createdRound ?? 0) || currentTurn !== (flag.createdTurn ?? -1));
                     const isMuchLaterRound = currentRound > (flag.createdRound ?? 0) + 1;
-                    if (isActorsNewTurn || isMuchLaterRound) {
+                    if (turnLeftActor || isActorsNewTurn || isMuchLaterRound) {
                         expiredIds.push(item.id);
                     }
                 }
@@ -355,6 +393,20 @@ async function executeBombQuickAlchemy(actor, token, target, itemData, mapIndex,
     } else {
         ui.notifications.info(`Quick Vial created & thrown (0 Versatile Vials spent).`);
     }
+
+    // Out-of-combat safety cleanup in case attack misses and no damage roll is ever clicked
+    if (!game.combat) {
+        const tempBombId = createdBomb.id;
+        setTimeout(async () => {
+            try {
+                if (actor.items.get(tempBombId)) {
+                    await actor.deleteEmbeddedDocuments("Item", [tempBombId]);
+                }
+            } catch (err) {
+                console.warn("PF2e Easy Quick Alchemy | Out-of-combat cleanup warning:", err);
+            }
+        }, 45000);
+    }
 }
 
 /**
@@ -386,11 +438,16 @@ async function executeConsumableQuickAlchemy(actor, token, formulaItem) {
     }
 
     try {
-        if (typeof createdItem.consume === "function") {
-            await createdItem.consume();
-        } else if (typeof createdItem.toMessage === "function") {
+        const hasToMessage = typeof createdItem.toMessage === "function";
+        const hasConsume = typeof createdItem.consume === "function";
+
+        // Post full item description card first so players can drag @UUID effect links before consuming
+        if (hasToMessage) {
             await createdItem.toMessage();
-        } else {
+        }
+        if (hasConsume) {
+            await createdItem.consume();
+        } else if (!hasToMessage) {
             await ChatMessage.create({
                 user: game.user.id,
                 speaker: ChatMessage.getSpeaker({ actor, token }),
@@ -565,8 +622,8 @@ export async function executeEasyQuickAlchemy() {
         return ui.notifications.warn("This macro only works on Player Character actors.");
     }
 
-    // Clean up any stale temporary Quick Alchemy items from earlier out-of-combat sessions
-    await cleanupTempQuickAlchemyItems(actor, 60000);
+    // Clean up any stale or depleted temporary Quick Alchemy items from earlier out-of-combat sessions
+    await cleanupTempQuickAlchemyItems(actor, 15000);
 
     const actorLevel = Number(actor.system?.details?.level?.value ?? actor.level ?? 1);
     const vialDice = getVersatileVialDiceCount(actorLevel);
@@ -663,6 +720,12 @@ export async function executeEasyQuickAlchemy() {
         return b.level - a.level;
     });
 
+    const quickVialImg =
+        indexById.get("ljT5pe8D7rudJqus")?.img ||
+        indexByUuid.get(VERSATILE_VIAL_COMPENDIUM_UUID)?.img ||
+        vialState.vialItem?.img ||
+        EASY_QUICK_ALCHEMY_MACRO_ICON;
+
     // 3. Build Special Quick Vial entries (gated by research field where applicable)
     const quickVialItems = [
         {
@@ -670,9 +733,9 @@ export async function executeEasyQuickAlchemy() {
             category: "bomb",
             name: "Quick Vial (Bomb Strike)",
             subtitle: `Throws a temporary Versatile Vial (${vialDice}d6${fields.bomber ? " acid/cold/elec/fire" : " acid"}, ${vialDice} splash).`,
-            img: vialState.vialItem?.img || EASY_QUICK_ALCHEMY_MACRO_ICON,
+            img: quickVialImg,
             actionLabel: "Strike",
-            badgeText: "0 Vials (Quick Vial)"
+            badgeText: "Uses 0 Vials (Quick Vial)"
         }
     ];
 
@@ -682,9 +745,9 @@ export async function executeEasyQuickAlchemy() {
             category: "elixir",
             name: "Quick Vial: Chirurgeon Field Vial",
             subtitle: `Heals a living creature for ${vialDice}d6 HP (drink or throw 20 ft.).`,
-            img: vialState.vialItem?.img || EASY_QUICK_ALCHEMY_MACRO_ICON,
+            img: quickVialImg,
             actionLabel: "Heal",
-            badgeText: "0 Vials (Quick Vial)"
+            badgeText: "Uses0 Vials (Quick Vial)"
         });
     }
 
@@ -694,9 +757,9 @@ export async function executeEasyQuickAlchemy() {
             category: "mutagen",
             name: "Quick Vial: Mutagenist Field Vial",
             subtitle: "Suppresses the drawback of one active mutagen for 1 minute.",
-            img: vialState.vialItem?.img || EASY_QUICK_ALCHEMY_MACRO_ICON,
+            img: quickVialImg,
             actionLabel: "Drink",
-            badgeText: "0 Vials (Quick Vial)"
+            badgeText: "Uses 0 Vials (Quick Vial)"
         });
     }
 
@@ -706,9 +769,9 @@ export async function executeEasyQuickAlchemy() {
             category: "poison",
             name: "Quick Vial: Toxicologist Field Vial",
             subtitle: `Applies ${vialDice}d6 poison damage to a weapon/ammo until end of turn.`,
-            img: vialState.vialItem?.img || EASY_QUICK_ALCHEMY_MACRO_ICON,
+            img: quickVialImg,
             actionLabel: "Apply",
-            badgeText: "0 Vials (Quick Vial)"
+            badgeText: "Uses 0 Vials (Quick Vial)"
         });
     }
 
@@ -753,6 +816,13 @@ export async function executeEasyQuickAlchemy() {
            </div>`
         : "";
 
+    let savedSortOrder = "name";
+    try {
+        savedSortOrder = game.settings.get(MODULE_ID, "quickAlchemySortOrder") || "name";
+    } catch {
+        savedSortOrder = "name";
+    }
+
     let activeTab = "all";
     let dialogRef = null;
 
@@ -786,8 +856,9 @@ export async function executeEasyQuickAlchemy() {
                 <div style="display: flex; align-items: center; gap: 4px;">
                     <label style="font-weight: bold;">Sort:</label>
                     <select id="eqa-sort-select" style="height: 26px; border: 1px solid #ccc; border-radius: 3px;">
-                        <option value="name">Name (A-Z)</option>
-                        <option value="level-desc">Level (High - Low)</option>
+                        <option value="name"${savedSortOrder === "name" ? " selected" : ""}>Name (A-Z)</option>
+                        <option value="level-desc"${savedSortOrder === "level-desc" ? " selected" : ""}>Level (High - Low)</option>
+                        <option value="level-asc"${savedSortOrder === "level-asc" ? " selected" : ""}>Level (Low - High)</option>
                     </select>
                 </div>
                 <div style="display: flex; align-items: center; gap: 4px;">
@@ -846,6 +917,8 @@ export async function executeEasyQuickAlchemy() {
 
                 if (sortMode === "level-desc") {
                     visibleFormulas.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
+                } else if (sortMode === "level-asc") {
+                    visibleFormulas.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
                 } else {
                     visibleFormulas.sort((a, b) => a.name.localeCompare(b.name) || (b.level - a.level));
                 }
@@ -947,7 +1020,15 @@ export async function executeEasyQuickAlchemy() {
 
             // Filter & Sort updates
             html.find("#eqa-search-input").on("input", renderList);
-            html.find("#eqa-sort-select").on("change", renderList);
+            html.find("#eqa-sort-select").on("change", async function () {
+                const newSort = $(this).val() || "name";
+                try {
+                    await game.settings.set(MODULE_ID, "quickAlchemySortOrder", newSort);
+                } catch (err) {
+                    console.warn("PF2e Easy Quick Alchemy | Failed to persist sort order setting:", err);
+                }
+                renderList();
+            });
 
             // Inspect item sheet
             html.on("click", ".eqa-info-link", async function (e) {

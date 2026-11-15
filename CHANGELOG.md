@@ -1,6 +1,7 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/16/2026 - Version 1.8.4 - Fixed some Easy Quick Alchemy issues. \
 11/16/2026 - Version 1.8.3 - Added Easy Quick Alchemy macro under the Crafting subfolder for Remaster Alchemists. Features category tabs (All, Bombs, Elixirs, Mutagens, Poisons, Other), live search and sorting, Versatile Vial inventory tracking (blocking formula crafting at 0 vials while keeping Quick Vial available), automatic held Bomb Strike popups against the selected target, auto-use chat cards for Elixirs/Mutagens/Poisons/Tools, and Research Field gated Quick Vial / Field Vial actions (Bomber damage types, Chirurgeon healing, Mutagenist drawback suppression, Toxicologist injury poison). \
 \
 11/13/2026 - Version 1.8.2 - Added Buy Crafting Formulas macro under the Crafting subfolder. Implements official Pathfinder 2e Formula Pricing. \
