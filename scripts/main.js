@@ -130,6 +130,12 @@ import {
     buyActorFormulasAsGM
 } from "./crafting/buy-formulas.js";
 
+import {
+    executeEasyQuickAlchemy,
+    EASY_QUICK_ALCHEMY_MACRO_NAME,
+    EASY_QUICK_ALCHEMY_MACRO_ICON
+} from "./crafting/easy-quick-alchemy.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -158,7 +164,8 @@ const DESIRED_MACROS = [
 
     // Crafting Subfolder
     { name: AUTO_UPGRADE_FORMULAS_MACRO_NAME, icon: AUTO_UPGRADE_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas();`, category: "Crafting" },
-    { name: BUY_FORMULAS_MACRO_NAME, icon: BUY_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeBuyFormulas();`, category: "Crafting" }
+    { name: BUY_FORMULAS_MACRO_NAME, icon: BUY_FORMULAS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeBuyFormulas();`, category: "Crafting" },
+    { name: EASY_QUICK_ALCHEMY_MACRO_NAME, icon: EASY_QUICK_ALCHEMY_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeEasyQuickAlchemy();`, category: "Crafting" }
 ];
 
 // --- HELPER FUNCTIONS --- //
@@ -398,6 +405,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeMartialPerformance = executeMartialPerformance;
     game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas = executeAutoUpgradeFormulas;
     game.pf2eAwesomePlayerMacros.executeBuyFormulas = executeBuyFormulas;
+    game.pf2eAwesomePlayerMacros.executeEasyQuickAlchemy = executeEasyQuickAlchemy;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
