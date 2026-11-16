@@ -41,6 +41,12 @@ Also , if you have any special lores, it will suggest the best one to use based 
 
 18.) Twin Takedown for dual-wielding Rangers to execute two melee strikes against their hunted prey.
 
+19.) Buy Formulas crafting/alchemist macro for adding formulas at the correct cost and in bulk.
+
+20.) Auto Upgrade Formulas crafting/alchemist macro to auto upgrade alchemical items to the highest possible level.
+
+21.) Easy Quick Alchemy alchemist macro for faster quick alchemy for throwing bombs or using alchemical items in combat.
+
 Macros are automatically organized in Foundry into dedicated subfolders under **PF2e Awesome Macros For Players**:
 - **Recall Knowledge**: Enhanced Recall Knowledge, Monster Hunter, Known Weaknesses, Combat Assessment, Magus's Analysis, Mastermind Rogue's Recall, Instructive Strike.
 - **Combat**: Flurry of Blows, Hunted Shot, Double Slice, Twin Feint, Reset Movement, Lingering Composition, Martial Performance.
