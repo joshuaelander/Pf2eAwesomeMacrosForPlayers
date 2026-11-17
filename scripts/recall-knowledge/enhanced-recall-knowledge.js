@@ -20,10 +20,398 @@ export const ENHANCED_RECALL_MACRO_NAME = "Enhanced Recall Knowledge";
 export const ENHANCED_RECALL_MACRO_ICON = "icons/sundries/documents/blueprint-recipe-alchemical.webp";
 
 const MODULE_ID = "pf2e-awesome-macros-for-players";
+const CUSTOM_QUESTIONS_SETTING_KEY = "customRecallQuestions";
+const QUESTIONS_CHANGED_HOOK = "pf2eAwesomeRecallQuestionsChanged";
+
+export const RK_INFO_FIELD = Object.freeze({
+    WEAKNESSES: "weaknesses",
+    RESISTANCES: "resistances",
+    IMMUNITIES: "immunities",
+    LOWEST_SAVE: "lowestSave",
+    HIGHEST_SAVE: "highestSave",
+    SAVES: "saves",
+    ABILITIES: "abilities",
+    ATTACKS: "attacks",
+    OTHER: "other"
+});
+
+const RK_MAPPABLE_FIELDS = Object.freeze([
+    { key: RK_INFO_FIELD.WEAKNESSES, label: "Weaknesses" },
+    { key: RK_INFO_FIELD.RESISTANCES, label: "Resistances" },
+    { key: RK_INFO_FIELD.IMMUNITIES, label: "Immunities" },
+    { key: RK_INFO_FIELD.LOWEST_SAVE, label: "Lowest Save" },
+    { key: RK_INFO_FIELD.HIGHEST_SAVE, label: "Highest Save" },
+    { key: RK_INFO_FIELD.ABILITIES, label: "Special Abilities" },
+    { key: RK_INFO_FIELD.ATTACKS, label: "Attacks" }
+]);
+
+const VALID_MAPPABLE_FIELD_KEYS = new Set(RK_MAPPABLE_FIELDS.map(f => f.key));
+
+const FIELD_LABELS = Object.freeze({
+    ...Object.fromEntries(RK_MAPPABLE_FIELDS.map(f => [f.key, f.label])),
+    [RK_INFO_FIELD.SAVES]: "Lowest/Highest Saves",
+    [RK_INFO_FIELD.OTHER]: "Custom (GM Discretion)"
+});
+
+export const DEFAULT_RECALL_QUESTIONS = Object.freeze([
+    Object.freeze({ id: "weaknesses", label: "Weaknesses", fields: Object.freeze([RK_INFO_FIELD.WEAKNESSES]) }),
+    Object.freeze({ id: "resistances", label: "Resistances", fields: Object.freeze([RK_INFO_FIELD.RESISTANCES]) }),
+    Object.freeze({ id: "immunities", label: "Immunities", fields: Object.freeze([RK_INFO_FIELD.IMMUNITIES]) }),
+    Object.freeze({ id: "saves", label: "Lowest/Highest Saves", fields: Object.freeze([RK_INFO_FIELD.LOWEST_SAVE, RK_INFO_FIELD.HIGHEST_SAVE]) }),
+    Object.freeze({ id: "abilities", label: "Special Abilities", fields: Object.freeze([RK_INFO_FIELD.ABILITIES]) }),
+    Object.freeze({ id: "attacks", label: "Attacks", fields: Object.freeze([RK_INFO_FIELD.ATTACKS]) })
+]);
 
 function getSetting(key, defaultValue) {
     try { return game.settings.get(MODULE_ID, key); }
     catch (e) { return defaultValue; }
+}
+
+function createQuestionId() {
+    if (globalThis.foundry?.utils?.randomID) {
+        return `q_${foundry.utils.randomID(8)}`;
+    }
+    return `q_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeFieldList(rawFields) {
+    if (!Array.isArray(rawFields)) return [];
+    const expanded = [];
+    for (const field of rawFields) {
+        if (field === RK_INFO_FIELD.SAVES) {
+            expanded.push(RK_INFO_FIELD.LOWEST_SAVE, RK_INFO_FIELD.HIGHEST_SAVE);
+        } else if (VALID_MAPPABLE_FIELD_KEYS.has(field)) {
+            expanded.push(field);
+        }
+    }
+    return Array.from(new Set(expanded));
+}
+
+function sanitizeRecallQuestions(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    const seenIds = new Set();
+    const cleaned = [];
+
+    for (const item of rawList) {
+        if (!item || typeof item !== "object") continue;
+        const label = String(item.label ?? "").trim();
+        const fields = normalizeFieldList(item.fields);
+        if (!label || fields.length === 0) continue;
+
+        let id = String(item.id ?? "").trim() || createQuestionId();
+        while (seenIds.has(id)) {
+            id = createQuestionId();
+        }
+        seenIds.add(id);
+        cleaned.push({ id, label, fields });
+    }
+
+    return cleaned;
+}
+
+export function getConfiguredRecallQuestions() {
+    const saved = getSetting(CUSTOM_QUESTIONS_SETTING_KEY, null);
+    const sanitized = sanitizeRecallQuestions(saved);
+    if (sanitized.length > 0) return sanitized;
+    return DEFAULT_RECALL_QUESTIONS.map(q => ({
+        id: q.id,
+        label: q.label,
+        fields: [...q.fields]
+    }));
+}
+
+function resolveSelectedQuestion(questionValue, otherText) {
+    if (!questionValue || questionValue === "all") {
+        return {
+            id: "all",
+            label: "General Info",
+            isAll: true,
+            isOther: false,
+            fields: []
+        };
+    }
+
+    if (questionValue === RK_INFO_FIELD.OTHER) {
+        return {
+            id: RK_INFO_FIELD.OTHER,
+            label: (otherText || "").trim() || "Other",
+            isAll: false,
+            isOther: true,
+            fields: [RK_INFO_FIELD.OTHER]
+        };
+    }
+
+    const configured = getConfiguredRecallQuestions().find(q => q.id === questionValue);
+    if (configured) {
+        return {
+            id: configured.id,
+            label: configured.label,
+            isAll: false,
+            isOther: false,
+            fields: [...configured.fields]
+        };
+    }
+
+    // Backwards-compatible fallback if a raw stat field key (e.g. "weaknesses" or "saves") was passed directly
+    if (FIELD_LABELS[questionValue]) {
+        return {
+            id: questionValue,
+            label: FIELD_LABELS[questionValue],
+            isAll: false,
+            isOther: false,
+            fields: [questionValue]
+        };
+    }
+
+    return {
+        id: "all",
+        label: "General Info",
+        isAll: true,
+        isOther: false,
+        fields: []
+    };
+}
+
+const BaseApplicationV2 = globalThis.foundry?.applications?.api?.ApplicationV2 ?? class {};
+
+/**
+ * ApplicationV2 settings menu allowing Gamemasters and Assistant Gamemasters to configure
+ * world-shared custom Recall Knowledge questions mapped to one or more stat/info fields.
+ */
+export class RecallKnowledgeQuestionConfigApp extends BaseApplicationV2 {
+    static DEFAULT_OPTIONS = {
+        id: "pf2e-rk-question-config",
+        classes: ["pf2e-rk-question-config-app"],
+        window: {
+            title: "Configure Recall Knowledge Questions",
+            icon: "fas fa-question-circle",
+            resizable: true
+        },
+        position: {
+            width: 680,
+            height: "auto"
+        }
+    };
+
+    constructor(options = {}) {
+        super(options);
+        this._draftQuestions = null;
+    }
+
+    render(options = {}, _legacyOptions = {}) {
+        if (!game.user?.isGM) {
+            ui.notifications?.warn("Only a Gamemaster or Assistant Gamemaster can configure Recall Knowledge questions.");
+            return this;
+        }
+        if (typeof options === "boolean") {
+            options = { force: options };
+        }
+        return super.render(options, _legacyOptions);
+    }
+
+    async _prepareContext(_options) {
+        if (!this._draftQuestions) {
+            this._draftQuestions = getConfiguredRecallQuestions().map(q => ({
+                id: q.id,
+                label: q.label,
+                fields: [...q.fields]
+            }));
+        }
+        return {
+            questions: this._draftQuestions,
+            availableFields: RK_MAPPABLE_FIELDS
+        };
+    }
+
+    async _renderHTML(context, _options) {
+        const container = document.createElement("div");
+        container.className = "rk-question-config-body";
+        container.style.cssText = "display: flex; flex-direction: column; gap: 10px; padding: 6px 4px; font-family: 'Signika', sans-serif;";
+
+        const rowsHtml = context.questions.length > 0
+            ? context.questions.map((q, idx) => {
+                const selectedSet = new Set(q.fields);
+                const checkboxesHtml = context.availableFields.map(f => {
+                    const checked = selectedSet.has(f.key) ? "checked" : "";
+                    return `
+                        <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.85em; cursor: pointer; user-select: none;">
+                            <input type="checkbox" class="rk-cfg-field-checkbox" data-field="${escapeHtml(f.key)}" ${checked} style="margin: 0;" />
+                            <span>${escapeHtml(f.label)}</span>
+                        </label>
+                    `;
+                }).join("");
+
+                const disableUp = idx === 0 ? "disabled" : "";
+                const disableDown = idx === context.questions.length - 1 ? "disabled" : "";
+
+                return `
+                    <div class="rk-cfg-row" data-row-index="${idx}" data-question-id="${escapeHtml(q.id)}" style="border: 1px solid rgba(128,128,128,0.35); border-radius: 5px; padding: 8px 10px; background: rgba(128,128,128,0.06); display: flex; flex-direction: column; gap: 7px;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <input type="text" class="rk-cfg-label-input" value="${escapeHtml(q.label)}" placeholder="Enter question text (e.g. What is this creature vulnerable to?)" style="flex: 1; height: 28px; padding: 2px 8px;" />
+                            <button type="button" class="rk-cfg-move-up" title="Move Up" ${disableUp} style="width: 30px; height: 28px; flex: 0 0 auto; cursor: pointer;">Up</button>
+                            <button type="button" class="rk-cfg-move-down" title="Move Down" ${disableDown} style="width: 42px; height: 28px; flex: 0 0 auto; cursor: pointer;">Down</button>
+                            <button type="button" class="rk-cfg-delete" title="Remove Question" style="width: auto; height: 28px; padding: 0 8px; flex: 0 0 auto; cursor: pointer; color: #c62828;">Remove</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 8px; padding-left: 2px;">
+                            ${checkboxesHtml}
+                        </div>
+                    </div>
+                `;
+            }).join("")
+            : `<div style="text-align: center; padding: 18px; opacity: 0.75; font-style: italic;">No custom questions configured. Click "Add Question" or "Reset Defaults".</div>`;
+
+        container.innerHTML = `
+            <p style="margin: 0; font-size: 0.88em; line-height: 1.35; opacity: 0.9;">
+                Customize the questions shown in the Recall Knowledge dropdown and map each question to one or more stat fields revealed in chat.
+            </p>
+            <div class="rk-cfg-rows-scroll" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+                ${rowsHtml}
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid rgba(128,128,128,0.3); flex-wrap: wrap;">
+                <div style="display: flex; gap: 6px;">
+                    <button type="button" class="rk-cfg-add-btn" style="width: auto; flex: 0 0 auto; padding: 4px 12px; cursor: pointer;">Add Question</button>
+                    <button type="button" class="rk-cfg-reset-btn" style="width: auto; flex: 0 0 auto; padding: 4px 12px; cursor: pointer;">Reset Defaults</button>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                    <button type="button" class="rk-cfg-cancel-btn" style="width: auto; flex: 0 0 auto; padding: 4px 12px; cursor: pointer;">Cancel</button>
+                    <button type="button" class="rk-cfg-save-btn" style="width: auto; flex: 0 0 auto; padding: 4px 14px; font-weight: bold; cursor: pointer;">Save Questions</button>
+                </div>
+            </div>
+        `;
+
+        return container;
+    }
+
+    _replaceHTML(result, content, _options) {
+        content.replaceChildren(result);
+    }
+
+    _syncDraftFromDom() {
+        const root = this.element?.querySelector(".rk-question-config-body");
+        if (!root) return [];
+
+        const rows = root.querySelectorAll(".rk-cfg-row");
+        const nextDraft = [];
+        rows.forEach((row) => {
+            const id = row.dataset.questionId || createQuestionId();
+            const label = row.querySelector(".rk-cfg-label-input")?.value ?? "";
+            const fields = [];
+            row.querySelectorAll(".rk-cfg-field-checkbox:checked").forEach((cb) => {
+                if (cb.dataset.field) fields.push(cb.dataset.field);
+            });
+            nextDraft.push({ id, label, fields });
+        });
+
+        this._draftQuestions = nextDraft;
+        return nextDraft;
+    }
+
+    _onRender(context, options) {
+        super._onRender?.(context, options);
+        const root = this.element?.querySelector(".rk-question-config-body");
+        if (!root) return;
+
+        root.querySelectorAll(".rk-cfg-move-up").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                const draft = this._syncDraftFromDom();
+                const idx = Number(btn.closest(".rk-cfg-row")?.dataset.rowIndex);
+                if (idx > 0 && idx < draft.length) {
+                    [draft[idx - 1], draft[idx]] = [draft[idx], draft[idx - 1]];
+                    this.render({ force: false });
+                }
+            });
+        });
+
+        root.querySelectorAll(".rk-cfg-move-down").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                const draft = this._syncDraftFromDom();
+                const idx = Number(btn.closest(".rk-cfg-row")?.dataset.rowIndex);
+                if (idx >= 0 && idx < draft.length - 1) {
+                    [draft[idx], draft[idx + 1]] = [draft[idx + 1], draft[idx]];
+                    this.render({ force: false });
+                }
+            });
+        });
+
+        root.querySelectorAll(".rk-cfg-delete").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                const draft = this._syncDraftFromDom();
+                const idx = Number(btn.closest(".rk-cfg-row")?.dataset.rowIndex);
+                if (idx >= 0 && idx < draft.length) {
+                    draft.splice(idx, 1);
+                    this.render({ force: false });
+                }
+            });
+        });
+
+        root.querySelector(".rk-cfg-add-btn")?.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const draft = this._syncDraftFromDom();
+            draft.push({
+                id: createQuestionId(),
+                label: "",
+                fields: [RK_INFO_FIELD.WEAKNESSES]
+            });
+            await this.render({ force: false });
+            const inputs = this.element?.querySelectorAll(".rk-cfg-label-input");
+            inputs?.[inputs.length - 1]?.focus();
+        });
+
+        root.querySelector(".rk-cfg-reset-btn")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            this._draftQuestions = DEFAULT_RECALL_QUESTIONS.map(q => ({
+                id: q.id,
+                label: q.label,
+                fields: [...q.fields]
+            }));
+            this.render({ force: false });
+        });
+
+        root.querySelector(".rk-cfg-cancel-btn")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            this.close();
+        });
+
+        root.querySelector(".rk-cfg-save-btn")?.addEventListener("click", async (e) => {
+            e.preventDefault();
+            if (!game.user?.isGM) {
+                ui.notifications.warn("Only a Gamemaster or Assistant Gamemaster can save Recall Knowledge questions.");
+                return;
+            }
+            const draft = this._syncDraftFromDom();
+
+            if (draft.length === 0) {
+                ui.notifications.warn("Please keep at least one question before saving (or use Reset Defaults).");
+                return;
+            }
+
+            for (let i = 0; i < draft.length; i++) {
+                const entry = draft[i];
+                if (!entry.label.trim()) {
+                    ui.notifications.warn(`Question #${i + 1} needs a question text label.`);
+                    return;
+                }
+                if (!entry.fields.length) {
+                    ui.notifications.warn(`"${entry.label.trim()}" must map to at least one stat field.`);
+                    return;
+                }
+            }
+
+            const cleaned = sanitizeRecallQuestions(draft);
+            await game.settings.set(MODULE_ID, CUSTOM_QUESTIONS_SETTING_KEY, cleaned);
+            Hooks.callAll(QUESTIONS_CHANGED_HOOK, cleaned);
+            ui.notifications.info(`Saved ${cleaned.length} Recall Knowledge question${cleaned.length === 1 ? "" : "s"}.`);
+            this.close();
+        });
+    }
+
+    async close(options = {}) {
+        this._draftQuestions = null;
+        return super.close(options);
+    }
 }
 
 const SKILL_DICTIONARY = { 'arcana': 'Arcana', 'crafting': 'Crafting', 'nature': 'Nature', 'occultism': 'Occultism', 'religion': 'Religion', 'society': 'Society', 'medicine': 'Medicine', 'athletics': 'Athletics', 'acrobatics': 'Acrobatics', 'stealth': 'Stealth', 'lore': 'Lore (Generic)' };
@@ -264,31 +652,48 @@ async function analyzeCreature(targetActor) {
 
 function getTruthString(qType, truths, otherText) {
     switch (qType) {
-        case 'weaknesses': return truths.weaknesses.length ? (truths.weaknesses.length > 1 ? `its weaknesses are ${truths.weaknesses.join(', ')}` : `its weakness is ${truths.weaknesses[0]}`) : `it has no specific weaknesses`;
-        case 'resistances': return truths.resistances.length ? (truths.resistances.length > 1 ? `its resistances are ${truths.resistances.join(', ')}` : `its resistance is ${truths.resistances[0]}`) : `it has no specific resistances`;
-        case 'immunities': return truths.immunities.length ? `it is immune to ${truths.immunities.join(', ')}` : `it has no specific immunities`;
-        case 'saves': return `its highest save is ${truths.highestSave} and lowest save is ${truths.lowestSave}`;
-        case 'abilities': return truths.abilities.length ? `it has the ability: ${truths.abilities.join(', ')}` : `it has no notable special abilities`;
-        case 'attacks': return truths.attacks.length ? `it attacks using its ${truths.attacks.join(', ')}` : `it uses standard attacks`;
-        case 'other': return `the answer to "${otherText}" is [GM to determine based on statblock]`;
+        case RK_INFO_FIELD.WEAKNESSES: return truths.weaknesses.length ? (truths.weaknesses.length > 1 ? `its weaknesses are ${truths.weaknesses.join(', ')}` : `its weakness is ${truths.weaknesses[0]}`) : `it has no specific weaknesses`;
+        case RK_INFO_FIELD.RESISTANCES: return truths.resistances.length ? (truths.resistances.length > 1 ? `its resistances are ${truths.resistances.join(', ')}` : `its resistance is ${truths.resistances[0]}`) : `it has no specific resistances`;
+        case RK_INFO_FIELD.IMMUNITIES: return truths.immunities.length ? `it is immune to ${truths.immunities.join(', ')}` : `it has no specific immunities`;
+        case RK_INFO_FIELD.LOWEST_SAVE: return `its lowest save is ${truths.lowestSave}`;
+        case RK_INFO_FIELD.HIGHEST_SAVE: return `its highest save is ${truths.highestSave}`;
+        case RK_INFO_FIELD.SAVES: return `its highest save is ${truths.highestSave} and lowest save is ${truths.lowestSave}`;
+        case RK_INFO_FIELD.ABILITIES: return truths.abilities.length ? `it has the ability: ${truths.abilities.join(', ')}` : `it has no notable special abilities`;
+        case RK_INFO_FIELD.ATTACKS: return truths.attacks.length ? `it attacks using its ${truths.attacks.join(', ')}` : `it uses standard attacks`;
+        case RK_INFO_FIELD.OTHER: return `the answer to "${otherText}" is [GM to determine based on statblock]`;
         default: return ``;
     }
 }
 
 function getLieString(qType, lie, otherText) {
     switch (qType) {
-        case 'weaknesses': return `its weakness is ${lie.fakeWeakness}`;
-        case 'resistances': return `its resistance is ${lie.fakeResistance}`;
-        case 'immunities': return `it is immune to ${lie.fakeImmunity}`;
-        case 'saves': return `its highest save is ${lie.fakeHighSave} and lowest save is ${lie.fakeLowSave}`;
-        case 'abilities': return `it has the ability: ${lie.fakeAbility}`;
-        case 'attacks': return `it attacks using its ${lie.fakeAttack}`;
-        case 'other': return `the answer to "${otherText}" is [GM: Make up a lie]`;
+        case RK_INFO_FIELD.WEAKNESSES: return `its weakness is ${lie.fakeWeakness}`;
+        case RK_INFO_FIELD.RESISTANCES: return `its resistance is ${lie.fakeResistance}`;
+        case RK_INFO_FIELD.IMMUNITIES: return `it is immune to ${lie.fakeImmunity}`;
+        case RK_INFO_FIELD.LOWEST_SAVE: return `its lowest save is ${lie.fakeLowSave}`;
+        case RK_INFO_FIELD.HIGHEST_SAVE: return `its highest save is ${lie.fakeHighSave}`;
+        case RK_INFO_FIELD.SAVES: return `its highest save is ${lie.fakeHighSave} and lowest save is ${lie.fakeLowSave}`;
+        case RK_INFO_FIELD.ABILITIES: return `it has the ability: ${lie.fakeAbility}`;
+        case RK_INFO_FIELD.ATTACKS: return `it attacks using its ${lie.fakeAttack}`;
+        case RK_INFO_FIELD.OTHER: return `the answer to "${otherText}" is [GM: Make up a lie]`;
         default: return ``;
     }
 }
 
-function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowledge = false, disableColors = false) {
+function formatFieldStatementsHtml(fields, resolverFn, prefix = "") {
+    if (fields.length <= 1) {
+        const statement = resolverFn(fields[0]);
+        return escapeHtml(prefix ? `${prefix} ${statement}.` : `${statement}.`);
+    }
+    return fields.map(fieldKey => {
+        const fieldLabel = FIELD_LABELS[fieldKey] || fieldKey;
+        const statement = resolverFn(fieldKey);
+        const text = prefix ? `${prefix} ${statement}.` : `${statement}.`;
+        return `<div><b>${escapeHtml(fieldLabel)}:</b> ${escapeHtml(text)}</div>`;
+    }).join("");
+}
+
+function getHintForDegree(degree, analysis, selectedQuestion, otherText, hasDubiousKnowledge = false, disableColors = false) {
     if (!analysis) return "<em>No target selected.</em>";
     const { truths, lies, name } = analysis;
 
@@ -303,7 +708,7 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
     const trueLabel = disableColors ? 'inherit' : '#006600';
     const falseLabel = disableColors ? 'inherit' : '#990000';
 
-    if (question === 'all') {
+    if (selectedQuestion.isAll) {
         const buildGrid = (title, w, r, i, hs, ls, a) => `
             <div style="margin-top: 4px;">
                 <div style="font-weight: bold; border-bottom: 1px solid rgba(0,0,0,0.2); margin-bottom: 4px; padding-bottom: 2px;">${escapeHtml(title)}</div>
@@ -353,16 +758,25 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
         return "";
     }
 
-    let truthAns = getTruthString(question, truths, otherText);
+    const fields = selectedQuestion.fields;
+    const isMultiField = fields.length > 1;
+    const renderBlock = (innerHtml) => isMultiField
+        ? `<div style="margin-top: 3px; padding-left: 6px; border-left: 2px solid rgba(0,0,0,0.18);">${innerHtml}</div>`
+        : `"${innerHtml}"`;
 
     if (degree === 'Critical Success') {
-        return `<span style="${cCritSucc}"><b>Tell them:</b> "You are sure that ${truthAns}."<br><em>(GM: Provide additional contextual information or a second fact.)</em></span>`;
+        const truthBody = formatFieldStatementsHtml(fields, f => getTruthString(f, truths, otherText), "You are sure that");
+        return `<span style="${cCritSucc}"><b>Tell them:</b> ${renderBlock(truthBody)}<br><em>(GM: Provide additional contextual information or a second fact.)</em></span>`;
     } else if (degree === 'Success') {
-        return `<span style="${cSucc}"><b>Tell them:</b> "You think that ${truthAns}."</span>`;
+        const truthBody = formatFieldStatementsHtml(fields, f => getTruthString(f, truths, otherText), "You think that");
+        return `<span style="${cSucc}"><b>Tell them:</b> ${renderBlock(truthBody)}</span>`;
     } else if (degree === 'Failure') {
         if (hasDubiousKnowledge) {
-            const optionsHtml = lies.map(l => `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.1);">"You think that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></div>`).join('');
-            const trueHtml = `You think that ${truthAns}.`;
+            const trueHtml = formatFieldStatementsHtml(fields, f => getTruthString(f, truths, otherText), "You think that");
+            const optionsHtml = lies.map(l => {
+                const lieBody = formatFieldStatementsHtml(fields, f => getLieString(f, l, otherText), "You think that");
+                return `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.1);">${renderBlock(lieBody)} <br><span style="font-size:0.85em; color:#666;">(Based on ${escapeHtml(l.fakeName)})</span></div>`;
+            }).join('');
             return `<span style="${cFail}"><b>Dubious Knowledge:</b></span>
             <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px; color: #222;">
                 <div style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; background: ${trueBg};">
@@ -376,13 +790,16 @@ function getHintForDegree(degree, analysis, question, otherText, hasDubiousKnowl
             return `<span style="${cFail}"><b>Failure:</b> You are not sure about this creature.</span>`;
         }
     } else if (degree === 'Critical Failure') {
-        const optionsHtml = lies.map(l => `<div style="margin-top: 4px;">"You are sure that ${getLieString(question, l, otherText)}." <br><span style="font-size:0.85em; color:#666;">(Based on ${l.fakeName})</span></div>`).join('');
+        const optionsHtml = lies.map(l => {
+            const lieBody = formatFieldStatementsHtml(fields, f => getLieString(f, l, otherText), "You are sure that");
+            return `<div style="margin-top: 4px;">${renderBlock(lieBody)} <br><span style="font-size:0.85em; color:#666;">(Based on ${escapeHtml(l.fakeName)})</span></div>`;
+        }).join('');
         return `<span style="${cCritFail}"><b>Confident Falsehood — Pick what to tell them:</b>${optionsHtml}</span>`;
     }
     return "";
 }
 
-async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel, manualBonus) {
+async function createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, selectedQuestion, otherText, suggestedSkillLabel, manualBonus) {
     const colorMap = { 'Critical Success': '#00aa00', 'Success': '#0066cc', 'Failure': '#cc6600', 'Critical Failure': '#cc0000', 'Unknown': '#555555' };
     const hideBreakdown = getSetting('hideModifierBreakdown', false);
     const autoReplyOn = getSetting('autoReply', false);
@@ -395,8 +812,8 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
         // Use grey layout if colors are disabled
         const color = disableGMColors ? '#555555' : (colorMap[p.degree] || '#000000');
 
-        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, question, otherText, res.hasDubiousKnowledge, disableGMColors) : '<em>No target selected.</em>';
-        if (autoReplyOn && dc !== null && question !== 'all') {
+        let hintHtml = dc !== null ? getHintForDegree(p.degree, creatureAnalysis, selectedQuestion, otherText, res.hasDubiousKnowledge, disableGMColors) : '<em>No target selected.</em>';
+        if (autoReplyOn && dc !== null && !selectedQuestion.isAll) {
             hintHtml += `<br><span style="color:#888; font-size:0.85em;"><em>(Auto-reply pushed to player)</em></span>`;
         }
 
@@ -434,8 +851,10 @@ async function createAggregatedRecallMessage(results, dc, creatureName, creature
     `;
     }
 
-    const qLabels = { 'weaknesses': 'Weaknesses', 'resistances': 'Resistances', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': otherText || 'Other', 'all': 'General Info' };
-    const qTitle = qLabels[question] ? `<br>Asked: ${escapeHtml(qLabels[question])}` : '';
+    const mappedFieldsText = (!selectedQuestion.isAll && !selectedQuestion.isOther && selectedQuestion.fields.length > 0)
+        ? ` <span style="font-weight: normal; font-size: 0.85em; color: #555;">(${escapeHtml(selectedQuestion.fields.map(f => FIELD_LABELS[f] || f).join(', '))})</span>`
+        : '';
+    const qTitle = selectedQuestion.label ? `<br>Asked: ${escapeHtml(selectedQuestion.label)}${mappedFieldsText}` : '';
 
     const dcText = dc !== null ? (suggestedSkillLabel ? `${escapeHtml(suggestedSkillLabel)} <b style="color:#aa0000;">DC ${dc}</b>` : `<b style="color:#aa0000;">DC ${dc}</b>`) : `Unknown DC`;
     const bonusText = manualBonus !== 0 ? `<br><span style="color:#aa0000; font-size: 0.85em;">(Includes ${manualBonus > 0 ? '+' : ''}${manualBonus} manual modifier)</span>` : '';
@@ -569,9 +988,10 @@ async function evaluateSkillRoll(actor, skillKey, dc, customLabel = null, forced
 }
 
 // --- Handles the public chat message generation based on target status ---
-async function createPublicRecallMessage(actorRolls, hasTarget, question, isGM) {
-    const qLabels = { 'weaknesses': 'Weaknesses', 'resistances': 'Resistances', 'immunities': 'Immunities', 'saves': 'Saves', 'abilities': 'Special Abilities', 'attacks': 'Attacks', 'other': 'Specific Information', 'all': 'General Info' };
-    const askedStr = (!isGM && hasTarget) ? ` to learn about its <b>${escapeHtml(qLabels[question] || 'General Info')}</b>` : '';
+async function createPublicRecallMessage(actorRolls, hasTarget, selectedQuestion, isGM) {
+    const askedStr = (!isGM && hasTarget && !selectedQuestion.isAll)
+        ? ` — Question: <b>${escapeHtml(selectedQuestion.isOther ? 'Specific Information' : selectedQuestion.label)}</b>`
+        : '';
 
     let publicContent = `<div class="pf2e chat-card"><header class="card-header flexrow"><h4>Recall Knowledge</h4></header><div class="card-content">`;
 
@@ -584,10 +1004,21 @@ async function createPublicRecallMessage(actorRolls, hasTarget, question, isGM) 
     await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker(), content: publicContent });
 }
 
+function formatAutoReplyFieldsHtml(fields, resolverFn) {
+    if (fields.length <= 1) {
+        return escapeHtml(resolverFn(fields[0]));
+    }
+    return `<ul style="margin: 4px 0 4px 18px; padding: 0;">${fields.map(fieldKey => {
+        const label = FIELD_LABELS[fieldKey] || fieldKey;
+        return `<li><b>${escapeHtml(label)}:</b> ${escapeHtml(resolverFn(fieldKey))}</li>`;
+    }).join('')}</ul>`;
+}
+
 // --- Sends automated whispers directly to the rolling player ---
-async function sendAutoReply(results, question, otherText, analysis) {
-    if (!analysis || question === 'all') return;
+async function sendAutoReply(results, selectedQuestion, otherText, analysis) {
+    if (!analysis || selectedQuestion.isAll) return;
     const { truths, lies } = analysis;
+    const fields = selectedQuestion.fields;
 
     for (const res of results) {
         const p = res.primary;
@@ -600,21 +1031,37 @@ async function sendAutoReply(results, question, otherText, analysis) {
 
         // Strip inline colors so as not to metagame the success tier
         if (p.degree === 'Critical Success') {
-            const categories = ['weaknesses', 'resistances', 'immunities', 'saves', 'abilities', 'attacks'].filter(c => c !== question);
-            const extraCat = categories[Math.floor(Math.random() * categories.length)];
+            const askedFieldSet = new Set(fields);
+            const bonusPool = RK_MAPPABLE_FIELDS.map(f => f.key).filter(k => !askedFieldSet.has(k));
+            const extraCat = bonusPool.length > 0 ? bonusPool[Math.floor(Math.random() * bonusPool.length)] : null;
 
             html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
-            html += `<p><b>Primary Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
-            html += `<p><b>Bonus Info:</b> ${getTruthString(extraCat, truths, otherText)}</p>`;
+            if (fields.length > 1) {
+                html += `<p style="margin-bottom: 2px;"><b>Primary Info:</b></p>${formatAutoReplyFieldsHtml(fields, f => getTruthString(f, truths, otherText))}`;
+            } else {
+                html += `<p><b>Primary Info:</b> ${formatAutoReplyFieldsHtml(fields, f => getTruthString(f, truths, otherText))}</p>`;
+            }
+            if (extraCat) {
+                const extraLabel = FIELD_LABELS[extraCat] || extraCat;
+                html += `<p><b>Bonus Info (${escapeHtml(extraLabel)}):</b> ${escapeHtml(getTruthString(extraCat, truths, otherText))}</p>`;
+            }
         } else if (p.degree === 'Success') {
             html += `<p>You recall this is a <b>${escapeHtml(analysis.name)}</b>.</p>`;
-            html += `<p><b>Info:</b> ${getTruthString(question, truths, otherText)}</p>`;
+            if (fields.length > 1) {
+                html += `<p style="margin-bottom: 2px;"><b>Info:</b></p>${formatAutoReplyFieldsHtml(fields, f => getTruthString(f, truths, otherText))}`;
+            } else {
+                html += `<p><b>Info:</b> ${formatAutoReplyFieldsHtml(fields, f => getTruthString(f, truths, otherText))}</p>`;
+            }
         } else if (p.degree === 'Failure') {
             if (hasDubious) {
                 const chosenName = Math.random() > 0.5 ? analysis.name : lie.fakeName;
+                const formatInlineSet = (resolverFn) => fields.length <= 1
+                    ? `...${escapeHtml(resolverFn(fields[0]))}`
+                    : fields.map(f => `<b>${escapeHtml(FIELD_LABELS[f] || f)}:</b> ${escapeHtml(resolverFn(f))}`).join('; ');
+
                 const arr = [
-                    `<li style="margin-bottom: 4px;">...${getTruthString(question, truths, otherText)}</li>`,
-                    `<li style="margin-bottom: 4px;">...${getLieString(question, lie, otherText)}</li>`
+                    `<li style="margin-bottom: 4px;">${formatInlineSet(f => getTruthString(f, truths, otherText))}</li>`,
+                    `<li style="margin-bottom: 4px;">${formatInlineSet(f => getLieString(f, lie, otherText))}</li>`
                 ].sort(() => Math.random() - 0.5);
 
                 html += `<p>You think this might be a <b>${escapeHtml(chosenName)}</b>, but your memory is hazy. You recall two conflicting pieces of information:</p>`;
@@ -624,7 +1071,11 @@ async function sendAutoReply(results, question, otherText, analysis) {
             }
         } else if (p.degree === 'Critical Failure') {
             html += `<p>You are certain this is a <b>${escapeHtml(lie.fakeName)}</b>.</p>`;
-            html += `<p><b>Info:</b> ${getLieString(question, lie, otherText)}</p>`;
+            if (fields.length > 1) {
+                html += `<p style="margin-bottom: 2px;"><b>Info:</b></p>${formatAutoReplyFieldsHtml(fields, f => getLieString(f, lie, otherText))}`;
+            } else {
+                html += `<p><b>Info:</b> ${formatAutoReplyFieldsHtml(fields, f => getLieString(f, lie, otherText))}</p>`;
+            }
         } else {
             html += `<p>Result unknown.</p>`;
         }
@@ -642,8 +1093,9 @@ async function sendAutoReply(results, question, otherText, analysis) {
 
 async function performRecallKnowledge(html, circumstanceBonus = 0) {
     const skillKey = html.find('[name="skill"]').val();
-    const question = html.find('[name="question"]').val() || 'all';
+    const questionValue = html.find('[name="question"]').val() || 'all';
     const otherText = html.find('[name="otherText"]').val() || '';
+    const selectedQuestion = resolveSelectedQuestion(questionValue, otherText);
 
     // Extract the manual bonus and combine it with any programmatic bonuses
     const manualBonus = parseInt(html.find('[name="bonusModifier"]').val()) || 0;
@@ -783,7 +1235,7 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
 
         await ChatMessage.create({ user: game.user.id, speaker: ChatMessage.getSpeaker({ actor: null }), content: blindHtml, whisper: gmIds, blind: true });
 
-        await createPublicRecallMessage([{ actorName: actor.name, skillLabel: primaryResult.label }], false, question, game.user.isGM);
+        await createPublicRecallMessage([{ actorName: actor.name, skillLabel: primaryResult.label }], false, selectedQuestion, game.user.isGM);
         return;
     }
 
@@ -870,16 +1322,16 @@ async function performRecallKnowledge(html, circumstanceBonus = 0) {
     try { results = await Promise.all(rollPromises); }
     catch (err) { ui.notifications.error('Error performing rolls.'); return; }
 
-    await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, question, otherText, suggestedSkillLabel, finalBonus);
+    await createAggregatedRecallMessage(results, dc, creatureName, creatureAnalysis, selectedQuestion, otherText, suggestedSkillLabel, finalBonus);
 
     if (isPCSelected || (!game.user.isGM && targetActors.length === 1)) {
         const actorRolls = results.map(res => ({ actorName: res.actorName, skillLabel: res.primary.label }));
-        await createPublicRecallMessage(actorRolls, hasTarget ? true : false, question, game.user.isGM);
+        await createPublicRecallMessage(actorRolls, hasTarget ? true : false, selectedQuestion, game.user.isGM);
     }
 
     // Auto-Reply Handler
     if (getSetting('autoReply', false) && hasTarget) {
-        await sendAutoReply(results, question, otherText, creatureAnalysis);
+        await sendAutoReply(results, selectedQuestion, otherText, creatureAnalysis);
     }
 
     // Broadcast the results for other macros to catch
@@ -982,18 +1434,22 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
             ? `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target selected.</em></p>`
             : `<p style="color: #aa5500;"><em><i class="fas fa-exclamation-triangle"></i> No target selected. Will roll a generic recall knowledge check.</em></p>`);
 
+    const buildQuestionOptionsHtml = (selectedId = null) => {
+        const configuredQuestions = getConfiguredRecallQuestions();
+        const opts = configuredQuestions.map(q => {
+            const isSel = selectedId ? q.id === selectedId : false;
+            return `<option value="${escapeHtml(q.id)}"${isSel ? ' selected' : ''}>${escapeHtml(q.label)}</option>`;
+        }).join('');
+        const otherSel = selectedId === RK_INFO_FIELD.OTHER ? ' selected' : '';
+        return `${opts}<option value="${RK_INFO_FIELD.OTHER}"${otherSel}>Other (Specify)</option>`;
+    };
+
     // Only prompt for a specific question if the player has an actual target
     const questionHtml = (!isGM && hasTarget) ? `
       <div class="form-group">
         <label>Question:</label>
         <select id="question-select" name="question">
-            <option value="weaknesses">Weaknesses</option>
-            <option value="resistances">Resistances</option>
-            <option value="immunities">Immunities</option>
-            <option value="saves">Lowest/Highest Saves</option>
-            <option value="abilities">Special Abilities</option>
-            <option value="attacks">Attacks</option>
-            <option value="other">Other (Specify)</option>
+            ${buildQuestionOptionsHtml()}
         </select>
       </div>
       <div class="form-group" id="other-text-group" style="display:none;">
@@ -1022,6 +1478,8 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
       </div>
     </form>`;
 
+    let questionsChangedHookId = null;
+
     new Dialog({
         title: isGM ? 'Recall Knowledge (GM Overview)' : 'Recall Knowledge Check',
         content: content,
@@ -1036,11 +1494,27 @@ export function openRecallKnowledgeDialog(circumstanceBonus = 0) {
                 html.find('#bonus-output').text(val > 0 ? `+${val}` : val);
             });
 
-            if (!isGM) {
-                html.find('#question-select').change(function () {
-                    if ($(this).val() === 'other') html.find('#other-text-group').show();
+            if (!isGM && hasTarget) {
+                const toggleOtherField = () => {
+                    if (html.find('#question-select').val() === RK_INFO_FIELD.OTHER) html.find('#other-text-group').show();
                     else html.find('#other-text-group').hide();
+                };
+
+                html.find('#question-select').on('change', toggleOtherField);
+
+                questionsChangedHookId = Hooks.on(QUESTIONS_CHANGED_HOOK, () => {
+                    const prevVal = html.find('#question-select').val();
+                    html.find('#question-select').html(buildQuestionOptionsHtml(prevVal));
+                    toggleOtherField();
                 });
+
+                toggleOtherField();
+            }
+        },
+        close: () => {
+            if (questionsChangedHookId !== null) {
+                Hooks.off(QUESTIONS_CHANGED_HOOK, questionsChangedHookId);
+                questionsChangedHookId = null;
             }
         }
     }).render(true);
