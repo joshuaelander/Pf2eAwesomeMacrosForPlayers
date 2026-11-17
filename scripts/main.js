@@ -14,6 +14,8 @@ import {
     openRecallKnowledgeDialog,
     ENHANCED_RECALL_MACRO_NAME,
     ENHANCED_RECALL_MACRO_ICON,
+    RecallKnowledgeQuestionConfigApp,
+    DEFAULT_RECALL_QUESTIONS,
 } from "./recall-knowledge/enhanced-recall-knowledge.js";
 
 import {
@@ -348,6 +350,24 @@ export function registerSettings() {
         },
         default: 'name'
     });
+
+    game.settings.register(MODULE_ID, 'customRecallQuestions', {
+        name: 'Custom Recall Knowledge Questions',
+        hint: 'Custom Recall Knowledge questions mapped to one or more stat fields.',
+        scope: 'world',
+        config: false,
+        type: Array,
+        default: DEFAULT_RECALL_QUESTIONS.map(q => ({ id: q.id, label: q.label, fields: [...q.fields] }))
+    });
+
+    game.settings.registerMenu(MODULE_ID, 'customRecallQuestionsMenu', {
+        name: 'Recall Knowledge Questions',
+        label: 'Configure Questions',
+        hint: 'Define custom Recall Knowledge questions and map each one to one or more stat fields (GM / Assistant GM only).',
+        icon: 'fas fa-question-circle',
+        type: RecallKnowledgeQuestionConfigApp,
+        restricted: true
+    });
 }
 
 // --- HOOKS --- //
@@ -398,6 +418,7 @@ Hooks.once('ready', async () => {
 
     // Register Global Functions 
     game.pf2eAwesomePlayerMacros.openRecallKnowledgeDialog = openRecallKnowledgeDialog;
+    game.pf2eAwesomePlayerMacros.openRecallKnowledgeQuestionConfig = () => new RecallKnowledgeQuestionConfigApp().render(true);
     game.pf2eAwesomePlayerMacros.createCharacter = createCharacter;
     game.pf2eAwesomePlayerMacros.addExplorationActivity = addExplorationActivity;
     game.pf2eAwesomePlayerMacros.executeMonsterHunter = executeMonsterHunter;
