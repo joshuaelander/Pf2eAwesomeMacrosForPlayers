@@ -8,8 +8,7 @@
  *   (or custom DC).
  * - Critical Success: The composition cantrip lasts 4 rounds. (1 Focus Point spent)
  * - Success: The composition cantrip lasts 3 rounds. (1 Focus Point spent)
- * - Failure: The composition cantrip lasts 1 round, but you do NOT spend the Focus Point!
- * - Critical Failure: The composition cantrip lasts 1 round, and you spend 1 Focus Point.
+ * - Failure (or Critical Failure): The composition cantrip lasts 1 round, and you do NOT spend the Focus Point.
  * 
  * Macro Features:
  * - Selects composition cantrip (Courageous Anthem, Rallying Anthem, Song of Strength, Dirge of Doom, etc.).
@@ -25,6 +24,8 @@
 
 export const LINGERING_COMPOSITION_MACRO_NAME = "Lingering Composition";
 export const LINGERING_COMPOSITION_MACRO_ICON = "icons/skills/trades/music-notes-sound-blue.webp";
+
+import { DEGREE } from "../constants.js";
 
 /**
  * Helper to capture the next roll chat message of a specific type from an actor.
@@ -607,12 +608,11 @@ export async function executeLingeringComposition() {
     // 5. Available Cantrips (Standard + Known on Actor)
     const availableCantrips = getAvailableCompositionCantrips(actor);
     const defaultCantrip = availableCantrips[0];
-    let detectedTargets = getTokensInRange(token, defaultCantrip.radius, defaultCantrip.targetType);
 
     // 6. Build Setup Dialog
     const focusWarningHtml = currentFocus <= 0
         ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(211, 47, 47, 0.1); border-left: 3px solid #d32f2f; border-radius: 3px; font-size: 0.9em; color: #b71c1c;">
-             <strong>⚠️ Warning:</strong> You have <strong>0 Focus Points</strong> remaining! Lingering Composition costs 1 Focus Point (refunded on failure).
+             <strong>⚠️ Warning:</strong> You have <strong>0 Focus Points</strong> remaining! Lingering Composition spends 1 Focus Point only on a Success or Critical Success.
            </div>`
         : `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px; font-size: 0.9em;">
              <strong>Focus Pool:</strong> ${currentFocus} / ${maxFocus} Focus Points available.
@@ -672,8 +672,7 @@ export async function executeLingeringComposition() {
                 <div style="margin-top: 4px; font-size: 0.8em; color: #555;">
                     • Crit Success (DC+10): <strong>4 rounds</strong> (1 FP)<br>
                     • Success (≥ DC): <strong>3 rounds</strong> (1 FP)<br>
-                    • Failure (< DC): <strong>1 round</strong> (0 FP - Refunded!)<br>
-                    • Crit Failure (DC-10): <strong>1 round</strong> (1 FP)
+                    • Failure / Crit Failure (&lt; DC): <strong>1 round</strong> (0 FP — not expended)
                 </div>
             </div>
 
@@ -813,59 +812,44 @@ async function executeLingeringSequence(actor, token, cantrip, targetDC, targetA
 
     const rollMsg = await rollPromise;
 
-    // 2. Determine Outcome & Duration
+    // 2. Determine Outcome & Duration (Critical Failure shares the Failure outcome — no Focus Point spent)
     let outcome = rollMsg?.flags?.pf2e?.context?.outcome;
     const rollTotal = rollMsg?.rolls?.[0]?.total;
 
     if (!outcome && rollTotal !== undefined) {
-        if (rollTotal >= targetDC + 10) outcome = "criticalSuccess";
-        else if (rollTotal >= targetDC) outcome = "success";
-        else if (rollTotal <= targetDC - 10) outcome = "criticalFailure";
-        else outcome = "failure";
+        if (rollTotal >= targetDC + 10) outcome = DEGREE.CRITICAL_SUCCESS;
+        else if (rollTotal >= targetDC) outcome = DEGREE.SUCCESS;
+        else outcome = DEGREE.FAILURE;
     }
 
-    let durationRounds = 1;
-    let outcomeLabel = "Success";
-    let outcomeColor = "#2e7d32";
-    let focusDeltaText = "1 Focus Point spent";
-    let shouldDeductFocus = true;
+    const OUTCOME_DETAILS = {
+        [DEGREE.CRITICAL_SUCCESS]: {
+            durationRounds: 4,
+            outcomeLabel: "Critical Success!",
+            outcomeColor: "#1b5e20",
+            focusDeltaText: "1 Focus Point spent (lasts 4 rounds)",
+            shouldDeductFocus: true
+        },
+        [DEGREE.SUCCESS]: {
+            durationRounds: 3,
+            outcomeLabel: "Success!",
+            outcomeColor: "#2e7d32",
+            focusDeltaText: "1 Focus Point spent (lasts 3 rounds)",
+            shouldDeductFocus: true
+        }
+    };
 
-    switch (outcome) {
-        case "criticalSuccess":
-            durationRounds = 4;
-            outcomeLabel = "Critical Success!";
-            outcomeColor = "#1b5e20";
-            focusDeltaText = "1 Focus Point spent (lasts 4 rounds)";
-            shouldDeductFocus = true;
-            break;
-        case "success":
-            durationRounds = 3;
-            outcomeLabel = "Success!";
-            outcomeColor = "#2e7d32";
-            focusDeltaText = "1 Focus Point spent (lasts 3 rounds)";
-            shouldDeductFocus = true;
-            break;
-        case "criticalFailure":
-            durationRounds = 1;
-            outcomeLabel = "Critical Failure!";
-            outcomeColor = "#b71c1c";
-            focusDeltaText = "1 Focus Point spent (lasts 1 round)";
-            shouldDeductFocus = true;
-            break;
-        case "failure":
-        default:
-            durationRounds = 1;
-            outcomeLabel = "Failure";
-            outcomeColor = "#c62828";
-            focusDeltaText = "0 Focus Points spent (Focus Point REFUNDED!)";
-            shouldDeductFocus = false;
-            break;
-    }
+    const { durationRounds, outcomeLabel, outcomeColor, focusDeltaText, shouldDeductFocus } = OUTCOME_DETAILS[outcome] ?? {
+        durationRounds: 1,
+        outcomeLabel: outcome === DEGREE.CRITICAL_FAILURE ? "Critical Failure" : "Failure",
+        outcomeColor: "#c62828",
+        focusDeltaText: "0 Focus Points spent (no additional rounds)",
+        shouldDeductFocus: false
+    };
 
-    // 3. Update Focus Points
-    let remainingFocus = startingFocus;
+    // 3. Deduct Focus Point only on Success or Critical Success
     if (shouldDeductFocus && startingFocus > 0) {
-        remainingFocus = Math.max(0, startingFocus - 1);
+        const remainingFocus = Math.max(0, startingFocus - 1);
         try {
             await actor.update({ "system.resources.focus.value": remainingFocus });
         } catch (err) {
