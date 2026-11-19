@@ -126,6 +126,21 @@ function reassertTarget(targetToken) {
 }
 
 /**
+ * Safe deep clone helper.
+ */
+function deepClone(obj) {
+    if (!obj) return {};
+    if (globalThis.foundry?.utils?.deepClone) {
+        return foundry.utils.deepClone(obj);
+    }
+    try {
+        return JSON.parse(JSON.stringify(obj));
+    } catch {
+        return { ...obj };
+    }
+}
+
+/**
  * Main macro execution.
  */
 export async function executeHuntedShot() {
@@ -625,18 +640,6 @@ async function resolveHuntedShotDamage(actor, token, target, strike1, strike2, o
         token: targetTokenUuid,
         actor: targetActorUuid
     } : (attack1Msg?.flags?.pf2e?.context?.target ?? dmg1Msg?.flags?.pf2e?.context?.target ?? null);
-
-    const deepClone = (obj) => {
-        if (!obj) return {};
-        if (globalThis.foundry?.utils?.deepClone) {
-            return foundry.utils.deepClone(obj);
-        }
-        try {
-            return JSON.parse(JSON.stringify(obj));
-        } catch {
-            return { ...obj };
-        }
-    };
 
     // Build flags merging PF2e damage context and module flags
     const combinedFlags = deepClone(dmg1Msg?.flags ?? {});
