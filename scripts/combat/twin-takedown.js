@@ -19,6 +19,7 @@ export const TWIN_TAKEDOWN_MACRO_NAME = "Twin Takedown";
 export const TWIN_TAKEDOWN_MACRO_ICON = "icons/skills/melee/weapons-crossed-swords-teal.webp";
 
 import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "../constants.js";
+import { checkHuntPreyStatus, executeHuntPrey } from "./hunt-prey.js";
 
 /**
  * Helper to capture the next chat message of a specific type from an actor.
@@ -40,28 +41,6 @@ function captureNextRollMessage(actorId, rollType, excludeId = null, timeoutMs =
             resolve(findRecent());
         }, timeoutMs);
     });
-}
-
-/**
- * Checks if the actor or target has Hunt Prey active.
- */
-function checkHuntPreyStatus(actor, target) {
-    const actorHasEffect = actor.itemTypes.effect.some(e => 
-        e.slug === "effect-hunt-prey" || 
-        e.name === "Effect: Hunt Prey" || 
-        e.name?.toLowerCase().includes("hunt prey")
-    );
-
-    const targetHasEffect = target?.actor?.itemTypes?.effect?.some(e => 
-        e.slug === "effect-hunted-prey" || 
-        e.name === "Effect: Hunted Prey" || 
-        e.name?.toLowerCase().includes("hunted prey")
-    ) ?? false;
-
-    const rollOptions = actor.flags?.pf2e?.rollOptions?.all ?? {};
-    const hasRollOption = !!(rollOptions["self:effect:hunt-prey"] || rollOptions["target:mark:hunt-prey"]);
-
-    return actorHasEffect || targetHasEffect || hasRollOption;
 }
 
 /**
@@ -198,55 +177,66 @@ export async function executeTwinTakedown() {
     const targets = Array.from(game.user.targets ?? []);
     let target = targets.length > 0 ? targets[0] : null;
 
-    // 3. Feat Check Reminder
+    // 3. Feat & Hunt Prey Checks (shown inline in the dialog instead of spamming toast warnings)
     const hasFeat = actor.itemTypes?.feat?.some(f => 
         f.slug === "twin-takedown" || 
         f.name.toLowerCase().includes("twin takedown")
     ) || actor.items.some(i => i.slug === "twin-takedown" || i.name?.toLowerCase().includes("twin takedown"));
 
-    if (!hasFeat) {
-        if (game.user.isGM) {
-            ui.notifications.warn(`${actor.name} does not appear to have Twin Takedown (proceeding as GM).`);
-        } else {
-            ui.notifications.warn(`Reminder: ${actor.name} does not appear to have the Twin Takedown feat.`);
+    const isHuntedPreyActive = checkHuntPreyStatus(actor, target);
+
+    // 4. Find Available Strikes (prefer ready one-handed melee, then any melee, then any ready strike)
+    const oneHandedMeleeStrikes = actor.system.actions?.filter(a => a.type === "strike" && isOneHandedMeleeStrike(a)) ?? [];
+    const allMeleeStrikes = actor.system.actions?.filter(a => a.type === "strike" && a.ready && a.item?.isMelee) ?? [];
+    const hasTwoMeleeWeapons = oneHandedMeleeStrikes.length >= 2 || allMeleeStrikes.length >= 2;
+
+    let availableStrikes = oneHandedMeleeStrikes;
+    if (availableStrikes.length < 2 && allMeleeStrikes.length > availableStrikes.length) {
+        availableStrikes = allMeleeStrikes;
+    }
+    if (availableStrikes.length === 0) {
+        availableStrikes = actor.system.actions?.filter(a => a.type === "strike" && a.ready) ?? [];
+    }
+
+    if (availableStrikes.length === 0) {
+        return ui.notifications.warn(`No ready strikes found on ${actor.name}.`);
+    }
+
+    // 5. Determine Default Strike Ordering (Non-agile first, Agile second if mixed)
+    let defaultIdx1 = 0;
+    let defaultIdx2 = availableStrikes.length > 1 ? 1 : 0;
+    if (availableStrikes.length >= 2) {
+        const is1Agile = isAgile(availableStrikes[0]);
+        const is2Agile = isAgile(availableStrikes[1]);
+        if (is1Agile && !is2Agile) {
+            defaultIdx1 = 1;
+            defaultIdx2 = 0;
         }
     }
 
-    // 4. Check Hunt Prey Status
-    const isHuntedPreyActive = checkHuntPreyStatus(actor, target);
-    if (!isHuntedPreyActive) {
-        ui.notifications.warn(`Reminder: Hunt Prey does not appear to be active on ${actor.name}.`);
-    }
+    // 6. Build Setup Dialog Content
+    const featWarningHtml = !hasFeat
+        ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.08); border-left: 3px solid #f57c00; border-radius: 3px; font-size: 0.88em; color: #b75300;">
+             <strong>Feat Reminder:</strong> ${actor.name} does not appear to have the Twin Takedown feat.
+           </div>`
+        : "";
 
-    // 5. Find Available Ready One-Handed Melee Strikes
-    let availableStrikes = actor.system.actions?.filter(a => a.type === "strike" && isOneHandedMeleeStrike(a)) ?? [];
+    const weaponWarningHtml = !hasTwoMeleeWeapons
+        ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.08); border-left: 3px solid #f57c00; border-radius: 3px; font-size: 0.88em; color: #b75300;">
+             <strong>Weapon Reminder:</strong> ${actor.name} does not appear to have two melee weapons readied (Twin Takedown normally requires wielding two melee weapons). You can still select strikes below.
+           </div>`
+        : "";
 
-    // Fallback: any ready melee strike if specific one-handed check yields fewer than 2
-    if (availableStrikes.length < 2) {
-        availableStrikes = actor.system.actions?.filter(a => a.type === "strike" && a.ready && a.item?.isMelee) ?? [];
-    }
-
-    if (availableStrikes.length < 2) {
-        return ui.notifications.warn("Twin Takedown requires wielding two melee weapons, each in a different hand.");
-    }
-
-    // 6. Determine Default Strike Ordering (Non-agile first, Agile second if mixed)
-    let defaultIdx1 = 0;
-    let defaultIdx2 = 1;
-    const is1Agile = isAgile(availableStrikes[0]);
-    const is2Agile = isAgile(availableStrikes[1]);
-    if (is1Agile && !is2Agile) {
-        defaultIdx1 = 1;
-        defaultIdx2 = 0;
-    }
-
-    // 7. Build Setup Dialog Content
+    const huntPreyBtnHtml = target
+        ? `<button type="button" id="tt-apply-hunt-prey" style="margin-top: 6px; padding: 2px 8px; font-size: 0.85em; width: auto; cursor: pointer;">Apply Hunt Prey</button>`
+        : "";
     const huntPreyStatusHtml = isHuntedPreyActive
-        ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px; font-size: 0.9em;">
+        ? `<div id="tt-hunt-prey-banner" style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px; font-size: 0.9em;">
              <strong style="color: #2e7d32;">✓ Hunt Prey Active:</strong> Ready to unleash Twin Takedown on your prey.
            </div>`
-        : `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.1); border-left: 3px solid #f57c00; border-radius: 3px; font-size: 0.9em;">
-             <strong style="color: #b75300;">⚠️ Hunt Prey Reminder:</strong> Hunt Prey does not appear to be active on <strong>${actor.name}</strong>. (Twin Takedown requires your target to be your designated prey).
+        : `<div id="tt-hunt-prey-banner" style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.1); border-left: 3px solid #f57c00; border-radius: 3px; font-size: 0.9em;">
+             <div><strong style="color: #b75300;">Hunt Prey Reminder:</strong> Hunt Prey is not active on this target for <strong>${actor.name}</strong>. (Twin Takedown requires your target to be your designated prey).</div>
+             ${huntPreyBtnHtml}
            </div>`;
 
     const targetInfoHtml = target 
@@ -271,6 +261,8 @@ export async function executeTwinTakedown() {
 
     const setupDialogContent = `
         <div style="font-family: 'Signika', sans-serif;">
+            ${featWarningHtml}
+            ${weaponWarningHtml}
             ${huntPreyStatusHtml}
             ${targetInfoHtml}
             <div style="margin-bottom: 10px;">
@@ -316,10 +308,6 @@ export async function executeTwinTakedown() {
                     const strike2Idx = parseInt(html.find("#tt-strike-2").val(), 10) || 0;
                     const startingMap = parseInt(html.find("#tt-starting-map").val(), 10) || 0;
 
-                    if (strike1Idx === strike2Idx && availableStrikes.length >= 2) {
-                        return ui.notifications.warn("Twin Takedown requires one Strike with each of your two weapons. Please select two different weapons.");
-                    }
-
                     // Re-check target in case user targeted an enemy while dialog was open
                     if (!target && game.user.targets?.size > 0) {
                         target = Array.from(game.user.targets)[0];
@@ -334,6 +322,17 @@ export async function executeTwinTakedown() {
         },
         default: "roll",
         render: (html) => {
+            html.find("#tt-apply-hunt-prey").on("click", async () => {
+                const currentTarget = target ?? Array.from(game.user.targets ?? [])[0] ?? null;
+                const runHuntPrey = game.pf2eAwesomePlayerMacros?.executeHuntPrey ?? executeHuntPrey;
+                const res = await runHuntPrey({ actor, token, target: currentTarget });
+                if (res?.success) {
+                    html.find("#tt-hunt-prey-banner")
+                        .css({ background: "rgba(46, 125, 50, 0.08)", "border-left-color": "#2e7d32" })
+                        .html(`<strong style="color: #2e7d32;">✓ Hunt Prey Active:</strong> Ready to unleash Twin Takedown on your prey.`);
+                }
+            });
+
             const updateMapOptions = () => {
                 const s1Idx = parseInt(html.find("#tt-strike-1").val(), 10) || 0;
                 const s2Idx = parseInt(html.find("#tt-strike-2").val(), 10) || 0;

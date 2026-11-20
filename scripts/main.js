@@ -138,6 +138,13 @@ import {
     EASY_QUICK_ALCHEMY_MACRO_ICON
 } from "./crafting/easy-quick-alchemy.js";
 
+import {
+    executeHuntPrey,
+    HUNT_PREY_MACRO_NAME,
+    HUNT_PREY_MACRO_ICON,
+    applyHuntPreyIndicatorAsGM
+} from "./combat/hunt-prey.js";
+
 // --- THE DESIRED MACRO STATE ---
 const DESIRED_MACROS = [
     // General / Utility Macros (Root folder)
@@ -155,6 +162,7 @@ const DESIRED_MACROS = [
     { name: INSTRUCTIVE_STRIKE_MACRO_NAME, icon: INSTRUCTIVE_STRIKE_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeInstructiveStrike();`, category: "Recall Knowledge" },
 
     // Combat Subfolder
+    { name: HUNT_PREY_MACRO_NAME, icon: HUNT_PREY_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntPrey();`, category: "Combat" },
     { name: FLURRY_OF_BLOWS_MACRO_NAME, icon: FLURRY_OF_BLOWS_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeFlurryOfBlows();`, category: "Combat" },
     { name: HUNTED_SHOT_MACRO_NAME, icon: HUNTED_SHOT_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeHuntedShot();`, category: "Combat" },
     { name: TWIN_TAKEDOWN_MACRO_NAME, icon: TWIN_TAKEDOWN_MACRO_ICON, command: `game.pf2eAwesomePlayerMacros.executeTwinTakedown();`, category: "Combat" },
@@ -439,6 +447,7 @@ Hooks.once('ready', async () => {
     game.pf2eAwesomePlayerMacros.executeAutoUpgradeFormulas = executeAutoUpgradeFormulas;
     game.pf2eAwesomePlayerMacros.executeBuyFormulas = executeBuyFormulas;
     game.pf2eAwesomePlayerMacros.executeEasyQuickAlchemy = executeEasyQuickAlchemy;
+    game.pf2eAwesomePlayerMacros.executeHuntPrey = executeHuntPrey;
 
     // --- SOCKETLIB SETUP --- //
     if (game.modules.get("socketlib")?.active) {
@@ -535,6 +544,9 @@ Hooks.once('ready', async () => {
         // 8. Buy Formulas Socket
         playerModuleSocket.register("buyActorFormulas", buyActorFormulasAsGM);
 
+        // 9. Hunt Prey Target Indicator Socket
+        playerModuleSocket.register("applyHuntPreyIndicator", applyHuntPreyIndicatorAsGM);
+
     } else {
         console.warn("PF2e Awesome Macros For Players | Socketlib is not active. Some automations will not function.");
     }
@@ -626,6 +638,19 @@ Hooks.once('ready', async () => {
         } catch (error) {
             console.error("PF2e Awesome Macros For Players | Error buying formulas as GM:", error);
             return false;
+        }
+    };
+
+    game.pf2eAwesomePlayerMacros.applyHuntPreyIndicator = async (targetTokenUuid, rangerActorUuid, rangerName, maxPrey = 1) => {
+        if (!playerModuleSocket) return { success: false, error: "no_socket" };
+        try {
+            return await playerModuleSocket.executeAsGM("applyHuntPreyIndicator", targetTokenUuid, rangerActorUuid, rangerName, maxPrey);
+        } catch (error) {
+            if (error.name === "SocketlibNoGMConnectedError") {
+                ui.notifications.error("A Game Master must be online to place the Hunted Prey target indicator.");
+            }
+            console.error("PF2e Awesome Macros For Players | Error applying Hunt Prey indicator as GM:", error);
+            return { success: false, error: "socket_error" };
         }
     };
 

@@ -20,6 +20,7 @@ export const HUNTED_SHOT_MACRO_NAME = "Hunted Shot";
 export const HUNTED_SHOT_MACRO_ICON = "icons/skills/ranged/arrow-flying-white-blue.webp";
 
 import { OUTCOME, DEGREE, ROLL_TYPE, DEGREE_STRINGS } from "../constants.js";
+import { checkHuntPreyStatus, executeHuntPrey } from "./hunt-prey.js";
 
 /**
  * Helper to capture the next chat message of a specific type from an actor.
@@ -41,28 +42,6 @@ function captureNextRollMessage(actorId, rollType, excludeId = null, timeoutMs =
             resolve(findRecent());
         }, timeoutMs);
     });
-}
-
-/**
- * Checks if the actor or target has Hunt Prey active.
- */
-function checkHuntPreyStatus(actor, target) {
-    const actorHasEffect = actor.itemTypes.effect.some(e => 
-        e.slug === "effect-hunt-prey" || 
-        e.name === "Effect: Hunt Prey" || 
-        e.name?.toLowerCase().includes("hunt prey")
-    );
-
-    const targetHasEffect = target?.actor?.itemTypes?.effect?.some(e => 
-        e.slug === "effect-hunted-prey" || 
-        e.name === "Effect: Hunted Prey" || 
-        e.name?.toLowerCase().includes("hunted prey")
-    ) ?? false;
-
-    const rollOptions = actor.flags?.pf2e?.rollOptions?.all ?? {};
-    const hasRollOption = !!(rollOptions["self:effect:hunt-prey"] || rollOptions["target:mark:hunt-prey"]);
-
-    return actorHasEffect || targetHasEffect || hasRollOption;
 }
 
 /**
@@ -167,11 +146,8 @@ export async function executeHuntedShot() {
     const targets = Array.from(game.user.targets ?? []);
     let target = targets.length > 0 ? targets[0] : null;
 
-    // 3. Check Hunt Prey Status
+    // 3. Check Hunt Prey Status (displayed inline inside the setup dialog rather than spamming a toast)
     const isHuntedPreyActive = checkHuntPreyStatus(actor, target);
-    if (!isHuntedPreyActive) {
-        ui.notifications.warn(`Reminder: Hunt Prey does not appear to be active on ${actor.name}.`);
-    }
 
     // 4. Find Available Ranged Strikes (Reload 0 preferred)
     const isReloadZeroRanged = (strike) => {
@@ -194,12 +170,16 @@ export async function executeHuntedShot() {
     }
 
     // 5. Build Initial Setup Dialog
+    const huntPreyBtnHtml = target
+        ? `<button type="button" id="hs-apply-hunt-prey" style="margin-top: 6px; padding: 2px 8px; font-size: 0.85em; width: auto; cursor: pointer;">Apply Hunt Prey</button>`
+        : "";
     const huntPreyStatusHtml = isHuntedPreyActive
-        ? `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px; font-size: 0.9em;">
+        ? `<div id="hs-hunt-prey-banner" style="margin-bottom: 10px; padding: 6px 10px; background: rgba(46, 125, 50, 0.08); border-left: 3px solid #2e7d32; border-radius: 3px; font-size: 0.9em;">
              <strong style="color: #2e7d32;">✓ Hunt Prey Active:</strong> Ready to unleash Hunted Shot on your prey.
            </div>`
-        : `<div style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.1); border-left: 3px solid #f57c00; border-radius: 3px; font-size: 0.9em;">
-             <strong style="color: #b75300;">⚠️ Hunt Prey Reminder:</strong> Hunt Prey does not appear to be active on <strong>${actor.name}</strong>. (Hunted Shot requires your target to be your designated prey).
+        : `<div id="hs-hunt-prey-banner" style="margin-bottom: 10px; padding: 6px 10px; background: rgba(245, 124, 0, 0.1); border-left: 3px solid #f57c00; border-radius: 3px; font-size: 0.9em;">
+             <div><strong style="color: #b75300;">⚠️ Hunt Prey Reminder:</strong> Hunt Prey does not appear to be active on this target for <strong>${actor.name}</strong>. (Hunted Shot requires your target to be your designated prey).</div>
+             ${huntPreyBtnHtml}
            </div>`;
 
     const targetInfoHtml = target 
@@ -276,6 +256,17 @@ export async function executeHuntedShot() {
         },
         default: "roll",
         render: (html) => {
+            html.find("#hs-apply-hunt-prey").on("click", async () => {
+                const currentTarget = target ?? Array.from(game.user.targets ?? [])[0] ?? null;
+                const runHuntPrey = game.pf2eAwesomePlayerMacros?.executeHuntPrey ?? executeHuntPrey;
+                const res = await runHuntPrey({ actor, token, target: currentTarget });
+                if (res?.success) {
+                    html.find("#hs-hunt-prey-banner")
+                        .css({ background: "rgba(46, 125, 50, 0.08)", "border-left-color": "#2e7d32" })
+                        .html(`<strong style="color: #2e7d32;">✓ Hunt Prey Active:</strong> Ready to unleash Hunted Shot on your prey.`);
+                }
+            });
+
             const updateMapOptions = () => {
                 const s1Idx = parseInt(html.find("#hs-strike-1").val(), 10) || 0;
                 const s2Idx = parseInt(html.find("#hs-strike-2").val(), 10) || 0;
