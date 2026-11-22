@@ -47,7 +47,7 @@ Also , if you have any special lores, it will suggest the best one to use based 
 
 21.) Easy Quick Alchemy alchemist macro for faster quick alchemy for throwing bombs or using alchemical items in combat.
 
-Macros are automatically organized in Foundry into dedicated subfolders under **PF2e Awesome Macros For Players**:
+Just enable the modules, refresh your world (F5) and you should see them in the macros tab in a folder. Macros are automatically organized in Foundry into subfolders under **PF2e Awesome Macros For Players**:
 - **Recall Knowledge**: Enhanced Recall Knowledge, Monster Hunter, Known Weaknesses, Combat Assessment, Magus's Analysis, Mastermind Rogue's Recall, Instructive Strike.
 - **Combat**: Flurry of Blows, Hunted Shot, Double Slice, Twin Feint, Reset Movement, Lingering Composition, Martial Performance.
 - **General / Utility**: Roll Random Character, Easy Exploration, Open Party Stash.
