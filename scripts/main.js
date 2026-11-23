@@ -359,6 +359,15 @@ export function registerSettings() {
         default: 'name'
     });
 
+    game.settings.register(MODULE_ID, 'quickAlchemyHighestLevelOnly', {
+        name: 'Easy Quick Alchemy: Highest Level Only',
+        hint: 'Only display the highest-level version of each formula family in Easy Quick Alchemy (also saved automatically when toggled in the dialog).',
+        scope: 'client',
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     game.settings.register(MODULE_ID, 'customRecallQuestions', {
         name: 'Custom Recall Knowledge Questions',
         hint: 'Custom Recall Knowledge questions mapped to one or more stat fields.',

@@ -29,7 +29,14 @@ export const EASY_QUICK_ALCHEMY_MACRO_ICON = "systems/pf2e/icons/features/classe
 
 const MODULE_ID = "pf2e-awesome-macros-for-players";
 const SETTING_KEYS = Object.freeze({
-    SORT_ORDER: "quickAlchemySortOrder"
+    SORT_ORDER: "quickAlchemySortOrder",
+    HIGHEST_LEVEL_ONLY: "quickAlchemyHighestLevelOnly"
+});
+
+const TIER_REGEX = Object.freeze({
+    PAREN: /\s*\((minor|lesser|moderate|greater|major|true|superior|standard|standard-grade|low-grade|high-grade|type\s+[0-9a-z]+)\)\s*$/i,
+    PREFIX: /^(minor|lesser|moderate|greater|major|true|superior|standard)\s+/i,
+    SLUG: /-(minor|lesser|moderate|greater|major|true|superior|standard|standard-grade|low-grade|high-grade|type-[0-9a-z]+)$/i
 });
 
 const VERSATILE_VIAL = Object.freeze({
@@ -810,7 +817,8 @@ async function gatherCraftableFormulas(actor, actorLevel, { indexByUuid, indexBy
             level,
             type,
             slug,
-            category: classifyAlchemicalCategory(entry)
+            category: classifyAlchemicalCategory(entry),
+            familyKey: getFormulaFamilyKey(entry.name, slug, uuid)
         });
     }
 
@@ -851,11 +859,55 @@ function buildQuickVialEntries(fields, vialDice, quickVialImg) {
     return entries;
 }
 
+/**
+ * Normalizes a formula name/slug by stripping recognized PF2e tier qualifiers
+ * (Minor, Lesser, Moderate, Greater, Major, True, etc.) to group versions of the same item.
+ */
+function getFormulaFamilyKey(name, slug, fallbackKey) {
+    let baseName = (name || "").trim();
+    if (TIER_REGEX.PAREN.test(baseName)) {
+        baseName = baseName.replace(TIER_REGEX.PAREN, "").trim();
+    } else if (TIER_REGEX.PREFIX.test(baseName)) {
+        baseName = baseName.replace(TIER_REGEX.PREFIX, "").trim();
+    }
+
+    const normalizedName = baseName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (normalizedName) return normalizedName;
+
+    const baseSlug = (slug || "").trim().replace(TIER_REGEX.SLUG, "").trim();
+    const normalizedSlug = baseSlug.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return normalizedSlug || fallbackKey;
+}
+
+/**
+ * Filters a formula list down to only the highest-level entry per formula family.
+ */
+function filterHighestLevelFormulas(formulas) {
+    const bestByFamily = new Map();
+    for (const formula of formulas) {
+        const key = formula.familyKey || formula.uuid;
+        const currentBest = bestByFamily.get(key);
+        if (!currentBest || formula.level > currentBest.level) {
+            bestByFamily.set(key, formula);
+        }
+    }
+    return Array.from(bestByFamily.values());
+}
+
 function getSavedSortOrder() {
     try {
         return game.settings.get(MODULE_ID, SETTING_KEYS.SORT_ORDER) || SORT_ORDER.NAME;
     } catch {
         return SORT_ORDER.NAME;
+    }
+}
+
+function getSavedHighestLevelOnly() {
+    try {
+        const val = game.settings.get(MODULE_ID, SETTING_KEYS.HIGHEST_LEVEL_ONLY);
+        return typeof val === "boolean" ? val : true;
+    } catch {
+        return true;
     }
 }
 
@@ -879,13 +931,14 @@ function buildDialogShellHtml({
     vialState,
     hasVials,
     target,
-    craftableFormulas,
+    displayedFormulas,
     quickVialItems,
-    savedSortOrder
+    savedSortOrder,
+    savedHighestOnly
 }) {
     const countTab = (cat) => {
-        if (cat === ALCHEMICAL_CATEGORY.ALL) return craftableFormulas.length + quickVialItems.length;
-        return craftableFormulas.filter(f => f.category === cat).length +
+        if (cat === ALCHEMICAL_CATEGORY.ALL) return displayedFormulas.length + quickVialItems.length;
+        return displayedFormulas.filter(f => f.category === cat).length +
             quickVialItems.filter(q => q.category === cat).length;
     };
 
@@ -964,6 +1017,10 @@ function buildDialogShellHtml({
                     </select>
                 </div>
                 ${bomberTypeSelectorHtml}
+                <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-weight: bold; user-select: none;" title="Show only the highest-level version of each formula family">
+                    <input type="checkbox" id="eqa-highest-only" ${savedHighestOnly ? "checked" : ""} style="margin: 0;" />
+                    <span>Highest Level Only</span>
+                </label>
             </div>
 
             <div id="eqa-list-container" style="height: 360px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; background: #fff; padding: 4px;">
@@ -1132,7 +1189,9 @@ export async function executeEasyQuickAlchemy() {
         EASY_QUICK_ALCHEMY_MACRO_ICON;
 
     const quickVialItems = buildQuickVialEntries(fields, vialDice, quickVialImg);
+    const highestLevelFormulas = filterHighestLevelFormulas(craftableFormulas);
     const savedSortOrder = getSavedSortOrder();
+    const savedHighestOnly = getSavedHighestLevelOnly();
 
     let activeTab = ALCHEMICAL_CATEGORY.ALL;
     let dialogRef = null;
@@ -1144,9 +1203,10 @@ export async function executeEasyQuickAlchemy() {
         vialState,
         hasVials,
         target,
-        craftableFormulas,
+        displayedFormulas: savedHighestOnly ? highestLevelFormulas : craftableFormulas,
         quickVialItems,
-        savedSortOrder
+        savedSortOrder,
+        savedHighestOnly
     });
 
     dialogRef = new Dialog({
@@ -1157,6 +1217,21 @@ export async function executeEasyQuickAlchemy() {
         },
         default: "cancel",
         render: (html) => {
+            const getActiveFormulas = () =>
+                html.find("#eqa-highest-only").is(":checked") ? highestLevelFormulas : craftableFormulas;
+
+            const updateTabCounts = () => {
+                const activeFormulas = getActiveFormulas();
+                html.find(".eqa-tab-btn").each(function () {
+                    const cat = $(this).data("tab");
+                    const label = CATEGORY_CONFIG[cat]?.tabLabel || cat;
+                    const count = cat === ALCHEMICAL_CATEGORY.ALL
+                        ? activeFormulas.length + quickVialItems.length
+                        : activeFormulas.filter(f => f.category === cat).length + quickVialItems.filter(q => q.category === cat).length;
+                    $(this).text(`${label} (${count})`);
+                });
+            };
+
             const renderList = () => {
                 const searchTxt = (html.find("#eqa-search-input").val() || "").trim().toLowerCase();
                 const sortMode = html.find("#eqa-sort-select").val() || SORT_ORDER.NAME;
@@ -1168,7 +1243,7 @@ export async function executeEasyQuickAlchemy() {
                     searchTxt,
                     sortMode,
                     quickVialItems,
-                    craftableFormulas
+                    craftableFormulas: getActiveFormulas()
                 }));
             };
 
@@ -1192,6 +1267,17 @@ export async function executeEasyQuickAlchemy() {
                 } catch (err) {
                     console.warn("PF2e Easy Quick Alchemy | Failed to persist sort order setting:", err);
                 }
+                renderList();
+            });
+
+            html.find("#eqa-highest-only").on("change", async function () {
+                const highestOnly = $(this).is(":checked");
+                try {
+                    await game.settings.set(MODULE_ID, SETTING_KEYS.HIGHEST_LEVEL_ONLY, highestOnly);
+                } catch (err) {
+                    console.warn("PF2e Easy Quick Alchemy | Failed to persist highest-level-only setting:", err);
+                }
+                updateTabCounts();
                 renderList();
             });
 
