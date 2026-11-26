@@ -403,24 +403,35 @@ Hooks.on(renderChatHookName, (message, html, data) => {
     handlePlayerCreateButton(message, $html, data);
 });
 
-// Helper to record token position at turn start for reliable movement resets
+// Helper to record token position at turn start for reliable movement resets.
+// Only the single active GM (or the token's owner if no GM is connected) writes the flag
+// so player clients never attempt unauthorized Token updates on other actors' turns.
 async function recordTurnStartPosition(combat) {
     const token = combat?.combatant?.token;
-    if (token && typeof token.setFlag === "function") {
-        try {
-            await token.setFlag(MODULE_ID, "turnStartPosition", {
-                x: token.x,
-                y: token.y,
-                elevation: token.elevation
-            });
-        } catch (err) {
-            console.warn("PF2e Awesome Macros For Players | Could not set turnStartPosition flag", err);
-        }
+    if (!token || typeof token.setFlag !== "function") return;
+
+    const activeGM = game.users?.activeGM ?? null;
+    const isDesignatedWriter = activeGM ? (game.user === activeGM) : Boolean(token.isOwner);
+    if (!isDesignatedWriter) return;
+
+    const currentPos = {
+        x: token.x,
+        y: token.y,
+        elevation: token.elevation
+    };
+    const prevPos = token.getFlag?.(MODULE_ID, "turnStartPosition");
+    if (prevPos && prevPos.x === currentPos.x && prevPos.y === currentPos.y && prevPos.elevation === currentPos.elevation) {
+        return;
+    }
+
+    try {
+        await token.setFlag(MODULE_ID, "turnStartPosition", currentPos);
+    } catch (err) {
+        console.warn("PF2e Awesome Macros For Players | Could not set turnStartPosition flag", err);
     }
 }
 
 Hooks.on("combatTurnChange", (combat) => recordTurnStartPosition(combat));
-Hooks.on("combatRound", (combat) => recordTurnStartPosition(combat));
 Hooks.on("combatStart", (combat) => recordTurnStartPosition(combat));
 
 // Global variable for our socket

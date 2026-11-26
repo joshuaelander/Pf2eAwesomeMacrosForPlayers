@@ -1,6 +1,8 @@
 # Pf2e Awesome Macros For Players
 
 Changes: \
+11/27/2026 - Version 1.8.9 - Fix pretty annoying bug for reset movement macro where each player tried to update the token's movement history. \
+\
 11/20/2026 - Version 1.8.7 - Added Hunt Prey macro under the Combat subfolder: uses PF2e's built-in Hunt Prey action and "Effect: Hunt Prey", places a visible "Hunted Prey (<Ranger>)" token indicator on the targeted creature via socketlib (respecting Double Prey / Triple Threat and automatically clearing older marks for that Ranger), and integrated it into Monster Hunter, Hunted Shot, and Twin Takedown. \
 \
 11/17/2026 - Version 1.8.5 - Add option to customize questions for enhanced recall knowledge. \

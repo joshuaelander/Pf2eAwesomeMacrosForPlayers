@@ -175,7 +175,7 @@ export async function executeResetMovement() {
         if (combatant) {
             // Check for Automated Action Tracker or similar module flags
             const aatFlags = combatant.flags?.["pf2e-automated-action-tracker"];
-            if (aatFlags) {
+            if (aatFlags && (game.user.isGM || combatant.isOwner)) {
                 try {
                     // Reset spent actions if tracked in flags
                     if (aatFlags.actionsSpent !== undefined) {
